@@ -5,6 +5,7 @@ import { ChakraProvider, extendTheme } from '@chakra-ui/react';
 import Login from './pages/Login';
 import LeaderboardList from './pages/LeaderboardList';
 import LeaderboardPage from './pages/LeaderboardPage';
+import ProgressLeaderboardPage from './pages/ProgressLeaderboardPage';
 import ExportData from './pages/ExportData';
 import PercentageLeaderboard from './pages/PercentageLeaderboard';
 import LeaderboardShufflePage from './pages/LeaderboardShufflePage';
@@ -37,6 +38,7 @@ export default function App() {
                         <Route path="/" element={<Login />} />
                         <Route path="/leaderboards" element={<LeaderboardList />} />
                         <Route path="/leaderboard/:id" element={<LeaderboardPage />} />
+                        <Route path="/leaderboard/:id/progress" element={<ProgressLeaderboardPage />} />
                         <Route path="/export-data" element={<ExportData />} />
                         <Route path="/percentage-leaderboard" element={<PercentageLeaderboard />} />
                         <Route path="/leaderboardshuffle" element={<LeaderboardShufflePage />} />

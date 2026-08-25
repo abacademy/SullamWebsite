@@ -10,7 +10,7 @@ import axios from 'axios';
 import Countdown from 'react-countdown';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../utils/UserContext';
-import { EditIcon, ArrowBackIcon, CopyIcon, ViewIcon } from '@chakra-ui/icons';
+import { EditIcon, ArrowBackIcon, CopyIcon, ViewIcon, CalendarIcon } from '@chakra-ui/icons';
 import LeaderboardModal from '../components/LeaderboardModal';
 import AuthGuard from '../components/AuthGuard';
 import { BASE_URL } from '../constants/ApiConfig';
@@ -376,6 +376,13 @@ function LeaderboardPageContent() {
                     </Flex>
                 </VStack>
                 <HStack justifySelf="end">
+                    <Tooltip label="Progress view">
+                        <IconButton
+                            aria-label="Progress view"
+                            icon={<CalendarIcon />}
+                            onClick={() => navigate(`/leaderboard/${id}/progress`)}
+                        />
+                    </Tooltip>
                     <Tooltip label="Teacher Summary">
                         <IconButton
                             aria-label="Teacher Summary"
