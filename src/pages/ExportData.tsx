@@ -40,6 +40,7 @@ const DATA_TYPES = [
     { id: 'qadeem_pages', label: 'Qadeem Pages' },
     { id: 'tikrar_pages', label: 'Tikrar Pages' },
     { id: 'qadeem_stars', label: 'Qadeem Stars (days completed qadeem)' },
+    { id: 'star_streak', label: 'Star Streak (longest streak of consecutive stars)' },
     { id: 'hasanat', label: 'Hasanat' },
     { id: 'cheques_abrar', label: 'Cheques (# of sullams to 55)' },
     { id: 'alltime_hifz', label: 'Alltime Hifz (total pages excluding preset surahs)', isAdvanced: true },
