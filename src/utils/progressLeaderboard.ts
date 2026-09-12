@@ -22,6 +22,45 @@ export const MAX_BANNERS = 4;
 export const POINTS_PER_PAGE = 550;
 export const LINES_PER_PAGE = 15;
 
+/**
+ * Length under the name: whole lines, until rounding hits a full page (15),
+ * then switch to unrounded pages with decimals.
+ */
+export function formatSulamLength(pages: number): string {
+    const roundedLines = Math.round(pages * LINES_PER_PAGE);
+    if (roundedLines >= LINES_PER_PAGE) {
+        const shown = pages.toFixed(2).replace(/0+$/, '').replace(/\.$/, '.0');
+        return `${shown} pgs`;
+    }
+    return `${roundedLines} lines`;
+}
+
+/** Nearest 0.5 pages (1.24 → 1.0, 1.25 → 1.5). Backend already does this. */
+export function roundToHalf(pages: number): number {
+    return Math.round(pages * 2) / 2;
+}
+
+/** Next 0.5 pages up. Exact halves stay put (8.0 → 8.0, 8.01 → 8.5). */
+export function ceilToHalf(pages: number): number {
+    return Math.ceil(pages * 2 - 1e-9) / 2;
+}
+
+/**
+ * Y is ceiled from the start so leftover work always has a 0.5 slot
+ * (8.2 stays 8.5 for the whole session). X rounds nearest, and only
+ * snaps to Y when they are actually finished.
+ */
+export function roundQadeemFraction(done: number, total: number): { done: number; total: number } {
+    const t = ceilToHalf(total);
+    let d = roundToHalf(done);
+    if (done < total) {
+        if (d >= t) d = t - 0.5;
+    } else {
+        d = t;
+    }
+    return { done: Math.max(d, 0), total: t };
+}
+
 // ---------------------------------------------------------------------------
 // API shapes
 // ---------------------------------------------------------------------------
@@ -42,6 +81,8 @@ export type ProgressItem = {
     created_at?: string | null;
     last_step_date?: string | null;
     count?: number;
+    /** Highest 11–55 confirmation dated before the leaderboard start. */
+    started_from?: string | null;
 };
 
 export type StudentRow = {
@@ -63,18 +104,21 @@ export type StudentRow = {
     /** Whether the student has any qadeem work. Only sent with detailed_progress=true. */
     HasQadeem?: boolean;
     /**
-     * Total range of every qadeem-state sulam, in points. Fixed for the session,
-     * unlike QadeemRange which grows as the student works. Overlapping sullams
-     * count once each, since each is a separate review. detailed_progress only.
+     * Page-reps of qadeem required today (Y in X/Y), in points.
+     * Length of each qadeem sulam × that day's denominator (5, 4, 3, 2, 1).
+     * detailed_progress only.
      */
     QadeemAssignedRange?: number;
-    /** As above but with overlaps collapsed — the distinct pages covered. */
+    /** Same sullams counted once, ignoring the repetition multiplier (Z range). */
     QadeemAssignedUniqueRange?: number;
-    /** Qadeem range covered in-window, excluding Tikrar. detailed_progress only. */
+    /** Page-reps done today (X in X/Y). Last tick of a 5/5 etc. waits on confirmation. */
     QadeemCoveredRange?: number;
+    /** Same as X, but only work finished after the jalseh started. */
+    QadeemCoveredInWindow?: number;
     QadeemRange: number;
     JadeedRange: number;
     NewSullamProgress?: ProgressItem[];
+    QadeemSullamProgress?: ProgressItem[];
 };
 
 // ---------------------------------------------------------------------------
@@ -88,14 +132,14 @@ export const COLUMNS = [
 export type ColumnKey = typeof COLUMNS[number];
 
 export const COLUMN_LABEL: Record<ColumnKey, string> = {
-    'not-started': 'Not started',
+    'not-started': 'Listening',
     'qadeem': 'Qadeem',
-    'new': 'New',
+    'new': '0',
     '11': '11',
     '22': '22',
     '33': '33',
     '44': '44',
-    'completed': 'Completed',
+    'completed': 'Summary',
 };
 
 /**
@@ -108,15 +152,29 @@ export const COLUMN_LABEL: Record<ColumnKey, string> = {
  */
 export type ColumnTheme = { bg: string; accent: string };
 
+export const NEW_STEPS = ['11', '22', '33', '44', '55'] as const;
+export const QADEEM_STEPS = ['5', '4', '3', '2', '1'] as const;
+
+export function ordinalRank(n: number): string {
+    const v = n % 100;
+    if (v >= 11 && v <= 13) return `${n}th`;
+    switch (n % 10) {
+        case 1: return `${n}st`;
+        case 2: return `${n}nd`;
+        case 3: return `${n}rd`;
+        default: return `${n}th`;
+    }
+}
+
 export const COLUMN_THEME: Record<ColumnKey, ColumnTheme> = {
-    'not-started': { bg: 'gray.50', accent: 'gray.600' },
+    'not-started': { bg: 'teal.50', accent: 'teal.600' },
     'qadeem': { bg: 'blue.50', accent: 'blue.500' },
     'new': { bg: 'green.50', accent: 'green.600' },
     '11': { bg: 'cyan.50', accent: 'cyan.700' },
     '22': { bg: 'purple.50', accent: 'purple.600' },
     '33': { bg: 'orange.50', accent: 'orange.600' },
     '44': { bg: 'pink.50', accent: 'pink.600' },
-    'completed': { bg: 'green.50', accent: 'green.700' },
+    'completed': { bg: 'gray.100', accent: 'gray.700' },
 };
 
 // ---------------------------------------------------------------------------
@@ -138,6 +196,8 @@ export type SullamCard = {
     currentStep: string | null;
     /** Running step counter, shown as the big number on the card. */
     step: number | null;
+    /** Highest pre-session 11–55 confirmation, e.g. "33". */
+    startedFrom?: string | null;
 };
 
 export type StudentCard = {
@@ -154,7 +214,24 @@ export type StudentCard = {
     lines?: number;
 };
 
-export type BoardCard = SullamCard | StudentCard;
+export type SummaryTile = {
+    pages: number;
+    steps: string[];
+};
+
+export type SummaryCard = {
+    kind: 'summary';
+    key: string;
+    userId: string;
+    name: string;
+    rank: number;
+    totalPoints: number;
+    qadeemPages: number;
+    qadeemStar: boolean;
+    newTiles: SummaryTile[];
+};
+
+export type BoardCard = SullamCard | StudentCard | SummaryCard;
 export type Board = Record<ColumnKey, BoardCard[]>;
 
 // ---------------------------------------------------------------------------
@@ -265,19 +342,25 @@ function emptyBoard(): Board {
     }, {} as Board);
 }
 
+function tilesFromProgress(items?: ProgressItem[]): SummaryTile[] {
+    return (items || [])
+        .filter((item) => (item.steps_completed || []).length > 0)
+        .map((item) => ({
+            pages: (item.range_points || 0) / POINTS_PER_PAGE,
+            steps: item.steps_completed || [],
+        }));
+}
+
 /**
  * Place every student and sullam into its column.
  *
  * The last six columns hold one card per sullam. The first two are per student:
  * a student sits in Qadeem while their old section is in progress, moves to
  * "Did not start" once it is done, and leaves that column as soon as they open
- * a sullam.
+ * a sullam. Summary lists everyone, ranked like the total leaderboard.
  */
 export function buildBoard(rows: StudentRow[], leaderboardStartMs: number): Board {
     const board = emptyBoard();
-    // Completed is a per-student tally rather than one card per sullam: once
-    // work is finished the individual sullams stop mattering, only the total.
-    const completedLines: Record<string, { name: string; lines: number }> = {};
 
     rows.forEach((row) => {
         // Fall back to "did they do any qadeem in the window" on an API that
@@ -317,12 +400,12 @@ export function buildBoard(rows: StudentRow[], leaderboardStartMs: number): Boar
                 staleClockStart: Math.max(lastStep ?? created ?? -Infinity, leaderboardStartMs),
                 currentStep: step,
                 step: item.count ?? null,
+                startedFrom: item.started_from ?? null,
             };
 
             if (column === 'completed') {
-                const tally = completedLines[row.user_id]
-                    || (completedLines[row.user_id] = { name: row.full_name, lines: 0 });
-                tally.lines += card.lines;
+                // Finished sullams live on the Summary card as New tiles, not
+                // as their own column cards.
                 return;
             }
 
@@ -330,23 +413,23 @@ export function buildBoard(rows: StudentRow[], leaderboardStartMs: number): Boar
         });
 
         if (qadeemInProgress) {
-            // Pages covered out of pages assigned. Both sides are raw ayah range,
-            // so the ratio is a true 0-100%.
-            //
-            // Deliberately not OldPoints as the numerator: that is a *weighted*
-            // sum (step level x range), so a student on step 5 scores five times
-            // their actual range and the bar overflows.
-            //
-            // Without QadeemAssignedRange (an API predating the field) fall back
-            // to the default board's pairing, which at least renders.
+            // X/Y = page-reps done over page-reps required today. Z is Y
+            // without the repetition multiplier. Backend already rounded to
+            // 0.5 pages; round again so a pre-rounding API still displays cleanly.
             const assigned = row.QadeemAssignedRange;
-            // QadeemCoveredRange excludes Tikrar, which expands to a whole surah
-            // segment and would otherwise push the ratio past 100%.
             const covered = row.QadeemCoveredRange ?? row.QadeemRange ?? 0;
             const [donePoints, totalPoints] = assigned == null
                 ? [row.OldPoints || 0, row.QadeemRange || 0]
                 : [covered, assigned];
             const uniquePoints = row.QadeemAssignedUniqueRange;
+            const rawDone = donePoints / POINTS_PER_PAGE;
+            const rawTotal = totalPoints / POINTS_PER_PAGE;
+            const { done, total } = roundQadeemFraction(rawDone, rawTotal);
+            let rangePages: number | undefined;
+            if (uniquePoints != null) {
+                rangePages = ceilToHalf(uniquePoints / POINTS_PER_PAGE);
+                if (total > 0 && rangePages <= 0) rangePages = 0.5;
+            }
 
             board.qadeem.push({
                 kind: 'student',
@@ -354,9 +437,9 @@ export function buildBoard(rows: StudentRow[], leaderboardStartMs: number): Boar
                 userId: row.user_id,
                 name: row.full_name,
                 variant: 'qadeem',
-                donePages: donePoints / POINTS_PER_PAGE,
-                totalPages: totalPoints / POINTS_PER_PAGE,
-                rangePages: uniquePoints == null ? undefined : uniquePoints / POINTS_PER_PAGE,
+                donePages: done,
+                totalPages: total,
+                rangePages,
             });
         } else if (items.length === 0) {
             // Qadeem done (or none to do) and nothing opened yet.
@@ -372,31 +455,59 @@ export function buildBoard(rows: StudentRow[], leaderboardStartMs: number): Boar
         }
     });
 
-    Object.entries(completedLines).forEach(([userId, { name, lines }]) => {
-        board.completed.push({
-            kind: 'student',
-            key: `c:${userId}`,
-            userId,
-            name,
-            variant: 'completed',
-            donePages: 0,
-            totalPages: 0,
-            lines,
-        });
+    const summaries: SummaryCard[] = rows.map((row) => {
+        // Jalseh-only pages. Do not fall back to the 5am-day X — that is
+        // what put pre-session qadeem on a later board.
+        const covered = row.QadeemCoveredInWindow ?? 0;
+        return {
+            kind: 'summary',
+            key: `s:${row.user_id}`,
+            userId: row.user_id,
+            name: row.full_name,
+            rank: 0,
+            totalPoints: row.TotalPoints || 0,
+            qadeemPages: roundToHalf(covered / POINTS_PER_PAGE),
+            qadeemStar: row.QadeemStatus === true,
+            newTiles: tilesFromProgress(row.NewSullamProgress),
+        };
+    });
+    summaries.sort((a, b) => {
+        if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+        if (a.totalPoints === 0 && a.qadeemStar !== b.qadeemStar) {
+            return a.qadeemStar ? -1 : 1;
+        }
+        return a.name.localeCompare(b.name);
+    });
+    summaries.forEach((card, i) => {
+        card.rank = i + 1;
+        board.completed.push(card);
     });
 
-    // Sullam and idle columns sort by name: stable ordering keeps cards from
-    // reshuffling under the layout animation on every poll.
+    // Greatest-to-least in every column that has a number: qadeem by pages
+    // done (then by assigned if still at 0), sullam columns by step count.
     COLUMNS.forEach((key) => {
         if (key === 'qadeem') {
-            // Closest to finishing floats to the top, since this column drains.
             board[key].sort((a, b) => {
-                const ra = a.kind === 'student' && a.totalPages ? a.donePages / a.totalPages : 0;
-                const rb = b.kind === 'student' && b.totalPages ? b.donePages / b.totalPages : 0;
-                return rb - ra || a.name.localeCompare(b.name);
+                const xa = a.kind === 'student' ? a.donePages : 0;
+                const xb = b.kind === 'student' ? b.donePages : 0;
+                if (xb !== xa) return xb - xa;
+                if (xa === 0) {
+                    const ya = a.kind === 'student' ? a.totalPages : 0;
+                    const yb = b.kind === 'student' ? b.totalPages : 0;
+                    return yb - ya || a.name.localeCompare(b.name);
+                }
+                return a.name.localeCompare(b.name);
             });
-        } else {
+        } else if (key === 'completed') {
+            // Already ranked by TotalPoints above.
+        } else if (key === 'not-started') {
             board[key].sort((a, b) => a.name.localeCompare(b.name));
+        } else {
+            board[key].sort((a, b) => {
+                const sa = a.kind === 'sullam' ? (a.step ?? 0) : 0;
+                const sb = b.kind === 'sullam' ? (b.step ?? 0) : 0;
+                return sb - sa || a.name.localeCompare(b.name);
+            });
         }
     });
 

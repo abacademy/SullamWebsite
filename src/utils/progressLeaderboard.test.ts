@@ -1,5 +1,5 @@
 import {
-    buildBoard, formatDuration, getStaleLevel, stepToColumn, countToColumn,
+    buildBoard, formatDuration, formatSulamLength, getStaleLevel, stepToColumn, countToColumn,
     resolveCurrentStep, parseApiDate, StudentRow, SullamCard, POINTS_PER_PAGE,
 } from './progressLeaderboard';
 
@@ -22,6 +22,18 @@ function sulam(over: any = {}) {
         last_step_date: null, ...over,
     };
 }
+
+describe('formatSulamLength', () => {
+    it('uses whole lines below a page', () => {
+        expect(formatSulamLength(12 / 15)).toBe('12 lines');
+        expect(formatSulamLength(14.4 / 15)).toBe('14 lines');
+    });
+    it('switches to unrounded pages once rounding reaches 15 lines', () => {
+        expect(formatSulamLength(14.6 / 15)).toBe('0.97 pgs');
+        expect(formatSulamLength(1)).toBe('1.0 pgs');
+        expect(formatSulamLength(1.25)).toBe('1.25 pgs');
+    });
+});
 
 describe('formatDuration', () => {
     it('pads to HH:MM:SS and does not wrap hours past a day', () => {
@@ -105,32 +117,44 @@ describe('card placement', () => {
         expect(b['not-started']).toHaveLength(1);
     });
 
-    it('measures qadeem as pages covered out of pages assigned', () => {
+    it('measures qadeem as page-reps done out of page-reps required', () => {
         const b = buildBoard([row({
             HasQadeem: true, QadeemStatus: false,
-            QadeemCoveredRange: 1100,     // 2 pages covered today
-            QadeemAssignedRange: 4400,    // 8 pages assigned (overlaps counted twice)
-            QadeemAssignedUniqueRange: 2750, // 5 distinct pages
-            OldPoints: 5500,              // weighted, must NOT be the numerator
+            QadeemCoveredRange: 3300,     // 2 pages × 3 reps done
+            QadeemAssignedRange: 5500,    // 2 pages × 5 required
+            QadeemAssignedUniqueRange: 1100, // 2 pages counted once
+            OldPoints: 5500,
         })], START);
         const card = b.qadeem[0];
-        expect(card.kind === 'student' && card.donePages).toBe(2);
-        expect(card.kind === 'student' && card.totalPages).toBe(8);
-        expect(card.kind === 'student' && card.rangePages).toBe(5);
+        expect(card.kind === 'student' && card.donePages).toBe(6);
+        expect(card.kind === 'student' && card.totalPages).toBe(10);
+        expect(card.kind === 'student' && card.rangePages).toBe(2);
     });
 
-    it('excludes Tikrar from the covered numerator', () => {
-        // QadeemRange counts Tikrar, which expands to a whole surah segment and
-        // can exceed the assigned range; QadeemCoveredRange does not.
+    it('keeps Y at 8.5 from the start for a ~8.2 assignment', () => {
+        const mk = (covered: number) => buildBoard([row({
+            HasQadeem: true, QadeemStatus: false,
+            QadeemCoveredRange: covered * 550,
+            QadeemAssignedRange: 8.2 * 550,
+        })], START).qadeem[0];
+        const start = mk(0);
+        const late = mk(7.8);
+        expect(start.kind === 'student' && start.totalPages).toBe(8.5);
+        expect(start.kind === 'student' && start.donePages).toBe(0);
+        expect(late.kind === 'student' && late.totalPages).toBe(8.5);
+        expect(late.kind === 'student' && late.donePages).toBe(8);
+    });
+
+    it('does not show 0 range when Y is non-zero', () => {
         const b = buildBoard([row({
             HasQadeem: true, QadeemStatus: false,
-            QadeemRange: 11000,           // 20 pages, inflated by a T-step
-            QadeemCoveredRange: 1650,     // 3 pages of actual qadeem ladder work
-            QadeemAssignedRange: 3300,
+            QadeemCoveredRange: 0,
+            QadeemAssignedRange: 0.2 * 5 * 550, // 0/5 of a 0.2-page sulam
+            QadeemAssignedUniqueRange: 0.2 * 550,
         })], START);
         const card = b.qadeem[0];
-        expect(card.kind === 'student' && card.donePages).toBe(3);
-        expect(card.kind === 'student' && card.totalPages).toBe(6);
+        expect(card.kind === 'student' && card.totalPages).toBeGreaterThan(0);
+        expect(card.kind === 'student' && card.rangePages).toBe(0.5);
     });
 
     it('omits the range line when the API does not send it', () => {
@@ -147,12 +171,12 @@ describe('card placement', () => {
         // with the numerator and a half-done student read as finished.
         const mk = (covered: number) => buildBoard([row({
             HasQadeem: true, QadeemStatus: false,
-            QadeemCoveredRange: covered, QadeemAssignedRange: 4400,
+            QadeemCoveredRange: covered, QadeemAssignedRange: 5500,
         })], START).qadeem[0];
         const early = mk(1100);
         const later = mk(3300);
-        expect(early.kind === 'student' && early.totalPages).toBe(8);
-        expect(later.kind === 'student' && later.totalPages).toBe(8);
+        expect(early.kind === 'student' && early.totalPages).toBe(10);
+        expect(later.kind === 'student' && later.totalPages).toBe(10);
         expect(later.kind === 'student' && later.donePages).toBe(6);
     });
 
@@ -187,9 +211,41 @@ describe('card placement', () => {
             ],
         })], START);
         expect(b.new).toHaveLength(2);
-        expect(b.new.map((c) => (c as SullamCard).step).sort((x, y) => (x ?? 0) - (y ?? 0))).toEqual([5, 10]);
+        expect(b.new.map((c) => (c as SullamCard).step)).toEqual([10, 5]);
         expect(b['44']).toHaveLength(1);
         expect((b['44'][0] as SullamCard).step).toBe(51);
+    });
+
+    it('carries the pre-session milestone as startedFrom', () => {
+        const b = buildBoard([row({
+            HasQadeem: false, QadeemStatus: false,
+            NewSullamProgress: [sulam({ count: 35, started_from: '33' })],
+        })], START);
+        expect((b['33'][0] as SullamCard).startedFrom).toBe('33');
+    });
+
+    it('sorts step columns greatest count first', () => {
+        const b = buildBoard([
+            row({ user_id: 'u1', full_name: 'A', HasQadeem: false, QadeemStatus: false,
+                  NewSullamProgress: [sulam({ sulam_id: 'a', count: 45 })] }),
+            row({ user_id: 'u2', full_name: 'B', HasQadeem: false, QadeemStatus: false,
+                  NewSullamProgress: [sulam({ sulam_id: 'b', count: 48 })] }),
+        ], START);
+        expect(b['44'].map((c) => (c as SullamCard).step)).toEqual([48, 45]);
+    });
+
+    it('sorts qadeem by X, then by Y among those still at 0', () => {
+        const b = buildBoard([
+            row({ user_id: 'u1', full_name: 'A', HasQadeem: true, QadeemStatus: false,
+                  QadeemCoveredRange: 0, QadeemAssignedRange: 1100 }),           // 0 / 2
+            row({ user_id: 'u2', full_name: 'B', HasQadeem: true, QadeemStatus: false,
+                  QadeemCoveredRange: 0, QadeemAssignedRange: 5500 }),           // 0 / 10
+            row({ user_id: 'u3', full_name: 'C', HasQadeem: true, QadeemStatus: false,
+                  QadeemCoveredRange: 2200, QadeemAssignedRange: 5500 }),        // 4 / 10
+            row({ user_id: 'u4', full_name: 'D', HasQadeem: true, QadeemStatus: false,
+                  QadeemCoveredRange: 1100, QadeemAssignedRange: 2200 }),        // 2 / 4
+        ], START);
+        expect(b.qadeem.map((c) => c.name)).toEqual(['C', 'D', 'B', 'A']);
     });
 
     it('runs the stale clock off the last milestone confirmation', () => {
@@ -220,7 +276,7 @@ describe('card placement', () => {
         expect(getStaleLevel(at(24), milestone + 23 * 60_000, '22')).toBe('red');
     });
 
-    it('files each sullam by its highest step and keeps completions in Completed', () => {
+    it('files each sullam by its highest step and keeps completions off the ladder', () => {
         const b = buildBoard([row({
             QadeemStatus: true,
             NewSullamProgress: [
@@ -230,34 +286,54 @@ describe('card placement', () => {
         })], START);
         expect(b['22']).toHaveLength(1);
         expect(b.completed).toHaveLength(1);
+        expect(b.completed[0].kind).toBe('summary');
     });
 
-    it('merges a student\'s completed sullams into one card with total lines', () => {
+    it('puts finished sullams on the Summary card, not as a merged lines total', () => {
         const b = buildBoard([row({
             HasQadeem: false, QadeemStatus: false,
             NewSullamProgress: [
-                sulam({ sulam_id: 'a', count: 55, range_points: POINTS_PER_PAGE }),      // 15 lines
-                sulam({ sulam_id: 'b', count: 60, range_points: POINTS_PER_PAGE * 2 }),  // 30 lines
-                sulam({ sulam_id: 'c', count: 30, range_points: POINTS_PER_PAGE }),      // still climbing
+                sulam({ sulam_id: 'a', count: 55, range_points: POINTS_PER_PAGE, steps_completed: ['55'] }),
+                sulam({ sulam_id: 'b', count: 60, range_points: POINTS_PER_PAGE * 2, steps_completed: ['55'] }),
+                sulam({ sulam_id: 'c', count: 30, range_points: POINTS_PER_PAGE }),
             ],
         })], START);
         expect(b.completed).toHaveLength(1);
         const card = b.completed[0];
-        expect(card.kind).toBe('student');
-        expect(card.kind === 'student' && card.lines).toBe(45);
-        // The unfinished one is untouched by the merge.
+        expect(card.kind).toBe('summary');
+        expect(card.kind === 'summary' && card.newTiles).toHaveLength(2);
         expect(b['22']).toHaveLength(1);
     });
 
-    it('gives each student their own completed card', () => {
+    it('ranks Summary by TotalPoints like the total leaderboard', () => {
         const b = buildBoard([
-            row({ user_id: 'u1', full_name: 'A', HasQadeem: false, QadeemStatus: false,
-                  NewSullamProgress: [sulam({ sulam_id: 'a', count: 55 })] }),
-            row({ user_id: 'u2', full_name: 'B', HasQadeem: false, QadeemStatus: false,
-                  NewSullamProgress: [sulam({ sulam_id: 'b', count: 55 })] }),
+            row({ user_id: 'u1', full_name: 'A', TotalPoints: 100, HasQadeem: false, QadeemStatus: false }),
+            row({ user_id: 'u2', full_name: 'B', TotalPoints: 900, HasQadeem: false, QadeemStatus: false }),
+            row({ user_id: 'u3', full_name: 'C', TotalPoints: 400, HasQadeem: false, QadeemStatus: false }),
         ], START);
-        expect(b.completed).toHaveLength(2);
-        expect(b.completed.map((c) => c.key)).toEqual(['c:u1', 'c:u2']);
+        expect(b.completed.map((c) => c.name)).toEqual(['B', 'C', 'A']);
+        expect(b.completed.map((c) => (c.kind === 'summary' ? c.rank : 0))).toEqual([1, 2, 3]);
+    });
+
+    it('among zeros, puts qadeem-star students above the rest', () => {
+        const b = buildBoard([
+            row({ user_id: 'u1', full_name: 'A', TotalPoints: 0, QadeemStatus: false }),
+            row({ user_id: 'u2', full_name: 'B', TotalPoints: 0, QadeemStatus: true }),
+            row({ user_id: 'u3', full_name: 'C', TotalPoints: 50, QadeemStatus: false }),
+        ], START);
+        expect(b.completed.map((c) => c.name)).toEqual(['C', 'B', 'A']);
+    });
+
+    it('counts only qadeem finished during the jalseh on Summary', () => {
+        const b = buildBoard([row({
+            QadeemStatus: true,
+            QadeemCoveredRange: 275,       // 0.5 pgs done at noon
+            QadeemCoveredInWindow: 0,      // none of it after 5pm
+        })], START);
+        const card = b.completed[0];
+        expect(card.kind).toBe('summary');
+        expect(card.kind === 'summary' && card.qadeemPages).toBe(0);
+        expect(card.kind === 'summary' && card.qadeemStar).toBe(true);
     });
 
     it('gives merge sub-ranges of one sullam distinct keys', () => {

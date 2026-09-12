@@ -6,6 +6,7 @@ import {
 } from '../../utils/progressLeaderboard';
 import SullamCard from './SullamCard';
 import StudentCard from './StudentCard';
+import SummaryCard from './SummaryCard';
 
 type Props = {
     column: ColumnKey;
@@ -34,17 +35,26 @@ export default function ProgressColumn({ column, cards, now }: Props) {
                 top={0}
                 zIndex={1}
                 bg={bg}
-                px={4}
-                pt={3}
+                px={8}
+                pt={2}
                 pb={2}
                 align="center"
-                justify="space-between"
+                justify="center"
                 flexShrink={0}
             >
-                <Text fontSize="md" fontWeight="extrabold" color={accent} whiteSpace="nowrap">
+                <Text
+                    fontSize="xl"
+                    fontWeight="extrabold"
+                    color={accent}
+                    lineHeight="short"
+                    textAlign="center"
+                    noOfLines={2}
+                >
                     {COLUMN_LABEL[column]}
                 </Text>
                 <Flex
+                    position="absolute"
+                    right={3}
                     bg="white"
                     color="gray.700"
                     borderRadius="full"
@@ -75,6 +85,8 @@ export default function ProgressColumn({ column, cards, now }: Props) {
                         {cards.map((card) =>
                             card.kind === 'sullam' ? (
                                 <SullamCard key={card.key} card={card} column={column} now={now} />
+                            ) : card.kind === 'summary' ? (
+                                <SummaryCard key={card.key} card={card} />
                             ) : (
                                 <StudentCard key={card.key} card={card} />
                             )

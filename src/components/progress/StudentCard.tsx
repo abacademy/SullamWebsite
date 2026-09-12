@@ -10,10 +10,8 @@ type Props = {
 };
 
 /**
- * Every per-student card. Qadeem pairs pages done against pages assigned, with
- * the deduplicated range beneath the name; "Did not start" is just a name, since
- * it is a list of idle students rather than an achievement; Completed merges a
- * student's finished sullams into a single total.
+ * Every per-student card. Qadeem shows X/Y page-reps (done / required today)
+ * with Z range (same work counted once) under the name.
  */
 export default function StudentCard({ card }: Props) {
     const isQadeem = card.variant === 'qadeem';
@@ -31,7 +29,7 @@ export default function StudentCard({ card }: Props) {
             py={2.5}
             bg="white"
             borderRadius="xl"
-            boxShadow="0 1px 3px rgba(0,0,0,0.06)"
+            boxShadow="0 2px 8px rgba(0,0,0,0.16)"
         >
             <Flex justify="space-between" align="center" gap={2}>
                 <Box minW={0}>
@@ -42,7 +40,7 @@ export default function StudentCard({ card }: Props) {
                     </Tooltip>
                     {isQadeem && card.rangePages != null && (
                         <Text fontSize="xs" color="gray.500" mt={0.5} whiteSpace="nowrap">
-                            {card.rangePages.toFixed(1)} range
+                            {card.rangePages.toFixed(1)} pgs
                         </Text>
                     )}
                 </Box>
@@ -58,6 +56,7 @@ export default function StudentCard({ card }: Props) {
                         {card.donePages.toFixed(1)}
                         <Box as="span" color="gray.400" fontWeight="normal"> / </Box>
                         <Box as="span" color="blue.500">{card.totalPages.toFixed(1)}</Box>
+                        <Box as="span" color="gray.400" fontWeight="normal" fontSize="xs"> pgs</Box>
                     </Text>
                 )}
             </Flex>

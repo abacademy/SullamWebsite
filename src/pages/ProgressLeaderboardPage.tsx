@@ -32,6 +32,7 @@ function ProgressLeaderboardPageContent() {
     const [banners, setBanners] = useState<Banner[]>([]);
 
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
+    const nextRefreshAt = useRef(Date.now() + REFRESH_INTERVAL);
     const prevSteps = useRef<StepSnapshot | null>(null);
     const prevQadeem = useRef<QadeemSnapshot | null>(null);
     const bannerSeq = useRef(0);
@@ -118,6 +119,7 @@ function ProgressLeaderboardPageContent() {
     }, [pushBanners]);
 
     const fetchData = useCallback(async () => {
+        nextRefreshAt.current = Date.now() + REFRESH_INTERVAL;
         try {
             const headers = { headers: { Authorization: token } };
             const [scoresRes, metaRes] = await Promise.all([
@@ -176,6 +178,9 @@ function ProgressLeaderboardPageContent() {
         return ms == null ? null : new Date(ms);
     }, [leaderboard]);
 
+    const refreshRemaining = Math.max(0, Math.ceil((nextRefreshAt.current - now) / 1000));
+    const refreshLabel = `${Math.floor(refreshRemaining / 60)}:${String(refreshRemaining % 60).padStart(2, '0')}`;
+
     const countdownRenderer = ({ days, hours, minutes, seconds }: any) => (
         <Text
             fontSize="5xl"
@@ -228,18 +233,31 @@ function ProgressLeaderboardPageContent() {
                     )}
                 </VStack>
 
-                <HStack justifySelf="end">
-                    <Tooltip label="Copy link">
-                        <IconButton aria-label="Copy link" icon={<CopyIcon />} onClick={handleCopyLink} />
-                    </Tooltip>
-                    <Tooltip label="Default view">
-                        <IconButton
-                            aria-label="Default view"
-                            icon={<ViewIcon />}
-                            onClick={() => navigate(`/leaderboard/${id}`)}
-                        />
-                    </Tooltip>
-                </HStack>
+                <VStack justifySelf="end" align="end" spacing={1}>
+                    <HStack>
+                        <Tooltip label="Copy link">
+                            <IconButton aria-label="Copy link" icon={<CopyIcon />} onClick={handleCopyLink} />
+                        </Tooltip>
+                        <Tooltip label="Default view">
+                            <IconButton
+                                aria-label="Default view"
+                                icon={<ViewIcon />}
+                                onClick={() => navigate(`/leaderboard/${id}`)}
+                            />
+                        </Tooltip>
+                    </HStack>
+                    <Text
+                        fontSize="10px"
+                        color="gray.500"
+                        opacity={0.4}
+                        fontFamily="mono"
+                        lineHeight="1"
+                        userSelect="none"
+                        sx={{ fontVariantNumeric: 'tabular-nums' }}
+                    >
+                        {refreshLabel}
+                    </Text>
+                </VStack>
             </Grid>
 
             <Grid

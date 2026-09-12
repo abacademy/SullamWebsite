@@ -3,7 +3,7 @@ import { Box, Text, Flex, Tooltip } from '@chakra-ui/react';
 import { motion } from 'framer-motion';
 import {
     SullamCard as SullamCardData, ColumnKey, StaleLevel,
-    formatDuration, getStaleLevel, COLUMN_THEME,
+    formatDuration, getStaleLevel, COLUMN_THEME, formatSulamLength,
 } from '../../utils/progressLeaderboard';
 
 const MotionBox = motion(Box);
@@ -45,7 +45,7 @@ export default function SullamCard({ card, column, now }: Props) {
             py={2.5}
             bg={style.bg}
             borderRadius="xl"
-            boxShadow="0 1px 3px rgba(0,0,0,0.06)"
+            boxShadow="0 2px 8px rgba(0,0,0,0.16)"
             borderWidth="2px"
             borderColor={style.ring}
             sx={{ transition: 'background-color 0.6s ease, border-color 0.6s ease' }}
@@ -58,8 +58,13 @@ export default function SullamCard({ card, column, now }: Props) {
                         </Text>
                     </Tooltip>
                     <Text fontSize="xs" color="gray.500" mt={0.5}>
-                        ({card.lines.toFixed(1)} lines)
+                        ({formatSulamLength(card.pages)})
                     </Text>
+                    {card.startedFrom && (
+                        <Text fontSize="xs" color="gray.500" mt={0.5} whiteSpace="nowrap">
+                            Started from {card.startedFrom}
+                        </Text>
+                    )}
                 </Box>
                 <Text
                     fontSize="xl"
