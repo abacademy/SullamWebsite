@@ -162,9 +162,18 @@ function LeaderboardPageContent() {
         return out;
     }, [flatOrgUsers, teacherOverrides]);
 
+    // Teacher Summary is shown during the jalseh — don't list the logged-in
+    // teacher as one of their own students (or under anyone else).
+    const openTeacherId = useMemo(() => {
+        if (!user) return null;
+        if (typeof user._id === 'string') return user._id;
+        return user._id?.$oid || user.id || null;
+    }, [user]);
+
     const teacherGroups = useMemo(() => {
         const grouped: Record<string, any[]> = {};
         data.forEach((row) => {
+            if (openTeacherId && row.user_id === openTeacherId) return;
             const teacher = row.schoolteacher?.trim() || userTeacherMap[row.user_id] || 'Unassigned';
             if (!grouped[teacher]) grouped[teacher] = [];
             grouped[teacher].push(row);
@@ -183,7 +192,7 @@ function LeaderboardPageContent() {
                 };
             })
             .sort((a, b) => b.totalPoints - a.totalPoints);
-    }, [data, userTeacherMap, emptyTeachers]);
+    }, [data, userTeacherMap, emptyTeachers, openTeacherId]);
     const maxTeacherPages = useMemo(
         () => Math.max(1, ...teacherGroups.map((g) => g.totalPages || 0)),
         [teacherGroups]
