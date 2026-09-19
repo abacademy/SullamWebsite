@@ -15,10 +15,10 @@
 // ⚠️ CHANGE THIS TO SWITCH ENVIRONMENTS ⚠️
 // Set to 'local', 'dev', or 'prod'
 type Environment = 'local' | 'dev' | 'prod' | 'prod2';
-const MODE: Environment = 'prod';
+const MODE: Environment = 'local';
 
 const BASE_URL_MAP: Record<Environment, string> = {
-    local: 'http://192.168.1.29:5002',
+    local: 'http://127.0.0.1:5002',
     dev: 'http://137.184.168.251',
     prod2: 'https://sulamserverbackend-cd7ib.ondigitalocean.app',
     prod: 'https://api.sullam.ca'

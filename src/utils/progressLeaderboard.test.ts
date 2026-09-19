@@ -350,7 +350,7 @@ describe('staleness', () => {
     const card = (over: Partial<SullamCard> = {}): SullamCard => ({
         kind: 'sullam', key: 'k', userId: 'u1', name: 'Ahmad',
         pages: 1, lines: 15, createdAt: START, staleClockStart: START,
-        currentStep: null, step: 0, ...over,
+        currentStep: null, step: 0, ownerFinishedSullam: false, ...over,
     });
 
     it('crosses to yellow at 15 min/page and red at 22 min/page', () => {
@@ -437,5 +437,48 @@ describe('parseApiDate', () => {
         expect(parseApiDate(undefined)).toBeNull();
         expect(parseApiDate('not a date')).toBeNull();
         expect(parseApiDate({})).toBeNull();
+    });
+});
+
+describe('summary card finished-sullam highlight', () => {
+    const summary = (item: any) => {
+        const board = buildBoard([row({ NewSullamProgress: [sulam(item)] })], START);
+        const card = board.completed[0];
+        return card.kind === 'summary' && card.finishedSullam;
+    };
+
+    it('lights up when a sullam hit 55 during the session', () => {
+        expect(summary({ count: 55, last_step_date: '2026-08-26T13:00:00Z' })).toBe(true);
+    });
+
+    it('stays off for a sullam finished before the session', () => {
+        expect(summary({ count: 55, last_step_date: '2026-08-25T13:00:00Z' })).toBe(false);
+    });
+
+    it('stays off while the sullam is still on the ladder', () => {
+        expect(summary({ count: 44, last_step_date: '2026-08-26T13:00:00Z' })).toBe(false);
+    });
+
+    it('uses current_step when the API has no counter', () => {
+        expect(summary({ current_step: '55', last_step_date: '2026-08-26T13:00:00Z' })).toBe(true);
+    });
+});
+
+describe('finished-sullam badge on ladder cards', () => {
+    it('marks the student\'s other open sullams once one hits 55 in session', () => {
+        const board = buildBoard([row({
+            NewSullamProgress: [
+                sulam({ sulam_id: 'done', count: 55, last_step_date: '2026-08-26T13:00:00Z' }),
+                sulam({ sulam_id: 'open', count: 22, last_step_date: '2026-08-26T13:30:00Z' }),
+            ],
+        })], START);
+        const card = board['22'][0];
+        expect(card.kind === 'sullam' && card.ownerFinishedSullam).toBe(true);
+    });
+
+    it('leaves them unmarked otherwise', () => {
+        const board = buildBoard([row({ NewSullamProgress: [sulam({ count: 22 })] })], START);
+        const card = board['22'][0];
+        expect(card.kind === 'sullam' && card.ownerFinishedSullam).toBe(false);
     });
 });

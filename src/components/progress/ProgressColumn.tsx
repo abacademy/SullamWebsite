@@ -74,6 +74,9 @@ export default function ProgressColumn({ column, cards, now }: Props) {
                 minH={0}
                 overflowY="auto"
                 px={2.5}
+                // Room for the finished-sullam badge that overhangs the
+                // top-right corner of a card; the scroller would clip it.
+                pt={2}
                 pb={3}
                 sx={{
                     '&::-webkit-scrollbar': { width: '6px' },

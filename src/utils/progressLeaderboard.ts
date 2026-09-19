@@ -198,6 +198,8 @@ export type SullamCard = {
     step: number | null;
     /** Highest pre-session 11–55 confirmation, e.g. "33". */
     startedFrom?: string | null;
+    /** The student already took another sullam to 55 this session. */
+    ownerFinishedSullam: boolean;
 };
 
 export type StudentCard = {
@@ -229,6 +231,8 @@ export type SummaryCard = {
     qadeemPages: number;
     qadeemStar: boolean;
     newTiles: SummaryTile[];
+    /** Took a sullam all the way to 55 during this session. */
+    finishedSullam: boolean;
 };
 
 export type BoardCard = SullamCard | StudentCard | SummaryCard;
@@ -342,6 +346,23 @@ function emptyBoard(): Board {
     }, {} as Board);
 }
 
+/**
+ * Whether any sullam reached 55 during the session. The 55 confirmation is the
+ * last step, so its date is `last_step_date`; a sullam finished on an earlier
+ * day and still listed must not light the card up. An API too old to send the
+ * date gets the benefit of the doubt.
+ */
+export function finishedSullamInSession(items: ProgressItem[] | undefined, leaderboardStartMs: number): boolean {
+    return (items || []).some((item) => {
+        const column = item.count == null
+            ? stepToColumn(resolveCurrentStep(item))
+            : countToColumn(item.count);
+        if (column !== 'completed') return false;
+        const finishedAt = parseTime(item.last_step_date);
+        return finishedAt == null || finishedAt >= leaderboardStartMs;
+    });
+}
+
 function tilesFromProgress(items?: ProgressItem[]): SummaryTile[] {
     return (items || [])
         .filter((item) => (item.steps_completed || []).length > 0)
@@ -370,6 +391,7 @@ export function buildBoard(rows: StudentRow[], leaderboardStartMs: number): Boar
         // board reads strictly left to right: Qadeem -> Did not start -> ladder.
         const qadeemInProgress = hasQadeem && row.QadeemStatus !== true;
         const items = qadeemInProgress ? [] : (row.NewSullamProgress || []);
+        const finishedSullam = finishedSullamInSession(row.NewSullamProgress, leaderboardStartMs);
 
         items.forEach((item, i) => {
             const rangePoints = item.range_points || 0;
@@ -401,6 +423,7 @@ export function buildBoard(rows: StudentRow[], leaderboardStartMs: number): Boar
                 currentStep: step,
                 step: item.count ?? null,
                 startedFrom: item.started_from ?? null,
+                ownerFinishedSullam: finishedSullam,
             };
 
             if (column === 'completed') {
@@ -469,6 +492,7 @@ export function buildBoard(rows: StudentRow[], leaderboardStartMs: number): Boar
             qadeemPages: roundToHalf(covered / POINTS_PER_PAGE),
             qadeemStar: row.QadeemStatus === true,
             newTiles: tilesFromProgress(row.NewSullamProgress),
+            finishedSullam: finishedSullamInSession(row.NewSullamProgress, leaderboardStartMs),
         };
     });
     summaries.sort((a, b) => {

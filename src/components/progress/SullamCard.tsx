@@ -49,7 +49,32 @@ export default function SullamCard({ card, column, now }: Props) {
             borderWidth="2px"
             borderColor={style.ring}
             sx={{ transition: 'background-color 0.6s ease, border-color 0.6s ease' }}
+            position="relative"
         >
+            {card.ownerFinishedSullam && (
+                // Sits on the corner rather than inside it, so it never crowds
+                // the step number, and stays readable on a yellow or red card.
+                <Tooltip label="Finished a sullam this session" openDelay={400}>
+                    <Flex
+                        position="absolute"
+                        top="-8px"
+                        right="-8px"
+                        w="22px"
+                        h="22px"
+                        borderRadius="full"
+                        bg="green.500"
+                        color="white"
+                        fontSize="xs"
+                        fontWeight="extrabold"
+                        align="center"
+                        justify="center"
+                        border="2px solid white"
+                        boxShadow="0 1px 4px rgba(0,0,0,0.25)"
+                    >
+                        ✓
+                    </Flex>
+                </Tooltip>
+            )}
             <Flex justify="space-between" align="flex-start" gap={2}>
                 <Box minW={0}>
                     <Tooltip label={card.label ? `${card.name} · ${card.label}` : card.name} openDelay={400}>

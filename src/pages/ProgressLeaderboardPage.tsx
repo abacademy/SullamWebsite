@@ -52,14 +52,25 @@ function ProgressLeaderboardPageContent() {
     const pushBanners = useCallback((incoming: Omit<Banner, 'id'>[]) => {
         if (!incoming.length) return;
         const withIds = incoming.map((b) => ({ ...b, id: `b${bannerSeq.current++}` }));
-        // Oldest drop out first so a burst of confirmations can't wall off the board.
-        setBanners((prev) => [...prev, ...withIds].slice(-MAX_BANNERS));
-        withIds.forEach((b) => {
-            setTimeout(() => {
-                setBanners((prev) => prev.filter((x) => x.id !== b.id));
-            }, BANNER_DURATION_MS);
+        // Banners play one at a time, so cap the queue or a burst of
+        // confirmations would keep the board covered for minutes. The one on
+        // screen is kept; the oldest waiting ones drop out first.
+        setBanners((prev) => {
+            const next = [...prev, ...withIds];
+            if (next.length <= MAX_BANNERS) return next;
+            return [next[0], ...next.slice(-(MAX_BANNERS - 1))];
         });
     }, []);
+
+    // Show the head of the queue for its slot, then move on to the next.
+    const currentBanner = banners[0] ?? null;
+    useEffect(() => {
+        if (!currentBanner) return;
+        const t = setTimeout(() => {
+            setBanners((prev) => prev.filter((x) => x.id !== currentBanner.id));
+        }, BANNER_DURATION_MS);
+        return () => clearTimeout(t);
+    }, [currentBanner]);
 
     /** Diff this poll against the last one and announce what moved. */
     const detectChanges = useCallback((rows: StudentRow[]) => {
@@ -178,6 +189,11 @@ function ProgressLeaderboardPageContent() {
         return ms == null ? null : new Date(ms);
     }, [leaderboard]);
 
+    // Once the session is over the board is a record of how it ended: card
+    // timers and staleness colours freeze at the end time rather than carrying
+    // on (a card going yellow to red after everyone has left).
+    const boardNow = endTime ? Math.min(now, endTime.getTime()) : now;
+
     const refreshRemaining = Math.max(0, Math.ceil((nextRefreshAt.current - now) / 1000));
     const refreshLabel = `${Math.floor(refreshRemaining / 60)}:${String(refreshRemaining % 60).padStart(2, '0')}`;
 
@@ -209,7 +225,7 @@ function ProgressLeaderboardPageContent() {
 
     return (
         <Box h="100vh" display="flex" flexDirection="column" overflow="hidden" p={4} bg="#E8EAF1">
-            <ProgressBanner banners={banners} />
+            <ProgressBanner banner={currentBanner} />
 
             <Grid
                 templateColumns={['1fr auto 1fr', null, '1fr auto 1fr']}
@@ -270,7 +286,7 @@ function ProgressLeaderboardPageContent() {
                 sx={{ scrollSnapType: 'x proximity' }}
             >
                 {COLUMNS.map((column) => (
-                    <ProgressColumn key={column} column={column} cards={board[column]} now={now} />
+                    <ProgressColumn key={column} column={column} cards={board[column]} now={boardNow} />
                 ))}
             </Grid>
         </Box>

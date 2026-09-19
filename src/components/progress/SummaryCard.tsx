@@ -3,7 +3,7 @@ import { Box, Text, Flex, HStack, VStack } from '@chakra-ui/react';
 import { motion } from 'framer-motion';
 import {
     SummaryCard as SummaryCardData, SummaryTile,
-    NEW_STEPS, ordinalRank, formatSulamLength,
+    NEW_STEPS, ordinalRank, formatSulamLength, POINTS_PER_PAGE,
 } from '../../utils/progressLeaderboard';
 
 const MotionBox = motion(Box);
@@ -62,17 +62,22 @@ export default function SummaryCard({ card }: Props) {
             transition={{ duration: 0.45, ease: 'easeInOut' }}
             px={2}
             py={2}
-            bg="white"
+            bg={card.finishedSullam ? 'green.100' : 'white'}
             borderRadius="xl"
             boxShadow="0 2px 8px rgba(0,0,0,0.16)"
+            borderWidth="2px"
+            borderColor={card.finishedSullam ? 'green.400' : 'transparent'}
+            sx={{ transition: 'background-color 0.6s ease, border-color 0.6s ease' }}
         >
-            <Flex align="center" gap={1.5} mb={1.5}>
+            {/* Rank sits on its own line so the name gets the card's full width —
+                at headline size it would not fit beside the badge in a narrow
+                column. */}
+            <Flex direction="column" align="center" gap={1} mb={1.5}>
                 <Box
                     px={1.5}
                     py="1px"
                     borderRadius="md"
                     bg={medal ? RANK_BG[card.rank - 1] : 'gray.100'}
-                    flexShrink={0}
                 >
                     <Text
                         fontSize="10px"
@@ -83,10 +88,33 @@ export default function SummaryCard({ card }: Props) {
                         {ordinalRank(card.rank)}
                     </Text>
                 </Box>
-                <Text fontWeight="bold" fontSize="xs" noOfLines={1} lineHeight="short">
+                <Text
+                    fontWeight="extrabold"
+                    fontSize="xl"
+                    noOfLines={2}
+                    lineHeight="1.15"
+                    textAlign="center"
+                >
                     {card.name}
                 </Text>
             </Flex>
+
+            {/* The headline: TotalPoints in pages, as the default leaderboard
+                view shows it — and the same figure this column is ranked by. */}
+            <Box textAlign="center" mb={1.5}>
+                <Text
+                    fontSize="2xl"
+                    fontWeight="extrabold"
+                    lineHeight="1"
+                    fontFamily="'Lexend', monospace"
+                    sx={{ fontVariantNumeric: 'tabular-nums' }}
+                >
+                    {(card.totalPoints / POINTS_PER_PAGE).toFixed(1)}
+                </Text>
+                <Text fontSize="9px" fontWeight="bold" color="gray.500" mt="2px">
+                    total pages
+                </Text>
+            </Box>
 
             <Box
                 px={1.5}
