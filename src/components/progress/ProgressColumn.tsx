@@ -6,7 +6,6 @@ import {
 } from '../../utils/progressLeaderboard';
 import SullamCard from './SullamCard';
 import StudentCard from './StudentCard';
-import SummaryCard from './SummaryCard';
 
 type Props = {
     column: ColumnKey;
@@ -76,7 +75,7 @@ export default function ProgressColumn({ column, cards, now }: Props) {
                 px={2.5}
                 // Room for the finished-sullam badge that overhangs the
                 // top-right corner of a card; the scroller would clip it.
-                pt={2}
+                pt={3}
                 pb={3}
                 sx={{
                     '&::-webkit-scrollbar': { width: '6px' },
@@ -88,11 +87,9 @@ export default function ProgressColumn({ column, cards, now }: Props) {
                         {cards.map((card) =>
                             card.kind === 'sullam' ? (
                                 <SullamCard key={card.key} card={card} column={column} now={now} />
-                            ) : card.kind === 'summary' ? (
-                                <SummaryCard key={card.key} card={card} />
-                            ) : (
+                            ) : card.kind === 'student' ? (
                                 <StudentCard key={card.key} card={card} />
-                            )
+                            ) : null
                         )}
                     </AnimatePresence>
                 </VStack>

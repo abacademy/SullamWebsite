@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback, useContext } from 'react';
 import {
     Box, Text, Flex, Heading, Grid, HStack, VStack, Spinner, IconButton, Tooltip,
     useToast,
@@ -6,23 +6,87 @@ import {
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Countdown from 'react-countdown';
-import { ArrowBackIcon, ViewIcon, CopyIcon } from '@chakra-ui/icons';
+import { ArrowBackIcon, ViewIcon, CopyIcon, EditIcon } from '@chakra-ui/icons';
+import { UserContext } from '../utils/UserContext';
+import LeaderboardModal from '../components/LeaderboardModal';
 import AuthGuard from '../components/AuthGuard';
 import ProgressColumn from '../components/progress/ProgressColumn';
 import ProgressBanner, { Banner } from '../components/progress/ProgressBanner';
+import SummaryPanel, { SummaryDock } from '../components/progress/SummaryPanel';
 import { BASE_URL } from '../constants/ApiConfig';
 import {
     StudentRow, COLUMNS, REFRESH_INTERVAL, BANNER_DURATION_MS, MAX_BANNERS,
     buildBoard, resolveCurrentStep, parseApiDate, countToColumn, stepToColumn,
-    COLUMN_LABEL, ColumnKey,
+    COLUMN_LABEL, ColumnKey, SummaryCard,
 } from '../utils/progressLeaderboard';
 
 type StepSnapshot = Record<string, ColumnKey>;
 type QadeemSnapshot = Record<string, boolean>;
 
+const LADDER_COLUMNS = COLUMNS.filter((c) => c !== 'completed');
+
+// The summary's placement is a per-screen preference, so it lives in this
+// browser only. Storage can throw (private mode), hence the guards.
+const DOCK_KEY = 'progressSummaryDock';
+const SIZE_KEY = 'progressSummarySize';
+const DEFAULT_SIZE: Record<SummaryDock, number> = { right: 340, bottom: 260 };
+const MIN_SIZE: Record<SummaryDock, number> = { right: 260, bottom: 160 };
+/** The ladder always keeps at least this share of the board. */
+const MAX_SHARE = 0.6;
+
+function readStored<T>(key: string, fallback: T): T {
+    try {
+        const raw = localStorage.getItem(key);
+        return raw == null ? fallback : (JSON.parse(raw).value ?? fallback);
+    } catch {
+        return fallback;
+    }
+}
+
+function writeStored(key: string, value: unknown) {
+    try {
+        localStorage.setItem(key, JSON.stringify({ value }));
+    } catch {
+        // Not worth surfacing: the layout just won't persist.
+    }
+}
+
+function LegendItem({ swatch, children }: { swatch: React.ReactNode; children: React.ReactNode }) {
+    return (
+        <HStack spacing={1.5}>
+            {swatch}
+            <Text fontSize="xs" color="gray.600" lineHeight="short">{children}</Text>
+        </HStack>
+    );
+}
+
+function Swatch({ bg, ring }: { bg: string; ring: string }) {
+    return <Box w="14px" h="14px" borderRadius="sm" bg={bg} border="2px solid" borderColor={ring} flexShrink={0} />;
+}
+
+function Legend() {
+    return (
+        <VStack align="start" spacing={0.5}>
+            <LegendItem swatch={<Swatch bg="yellow.100" ring="yellow.400" />}>
+                Taking long
+            </LegendItem>
+            <LegendItem swatch={<Swatch bg="red.100" ring="red.400" />}>
+                Taking too long
+            </LegendItem>
+            <LegendItem swatch={<Text fontSize="xs" color="green.500" fontWeight="extrabold" w="14px" textAlign="center">✓</Text>}>
+                Finished a sullam
+            </LegendItem>
+            <LegendItem swatch={<Text fontSize="xs" color="#D4A017" w="14px" textAlign="center">★</Text>}>
+                Qadeem done today
+            </LegendItem>
+        </VStack>
+    );
+}
+
 function ProgressLeaderboardPageContent() {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { user } = useContext(UserContext);
 
     const [data, setData] = useState<StudentRow[]>([]);
     const [leaderboard, setLeaderboard] = useState<any>(null);
@@ -30,6 +94,18 @@ function ProgressLeaderboardPageContent() {
     const [failed, setFailed] = useState(false);
     const [now, setNow] = useState(() => Date.now());
     const [banners, setBanners] = useState<Banner[]>([]);
+    const [showEdit, setShowEdit] = useState(false);
+
+    const [dock, setDockState] = useState<SummaryDock>(() => {
+        const v = readStored<SummaryDock>(DOCK_KEY, 'right');
+        return v === 'bottom' ? 'bottom' : 'right';
+    });
+    const [sizes, setSizes] = useState<Record<SummaryDock, number>>(
+        () => ({ ...DEFAULT_SIZE, ...readStored(SIZE_KEY, DEFAULT_SIZE) }),
+    );
+    /** Where the summary would land if the drag ended now; null when not dragging. */
+    const [dropTarget, setDropTarget] = useState<SummaryDock | null>(null);
+    const boardRef = useRef<HTMLDivElement | null>(null);
 
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
     const nextRefreshAt = useRef(Date.now() + REFRESH_INTERVAL);
@@ -39,6 +115,77 @@ function ProgressLeaderboardPageContent() {
 
     const toast = useToast();
     const token = localStorage.getItem('sulam_token') || '';
+
+    const setDock = (next: SummaryDock) => {
+        setDockState(next);
+        writeStored(DOCK_KEY, next);
+    };
+
+    const clampSize = (which: SummaryDock, px: number) => {
+        const rect = boardRef.current?.getBoundingClientRect();
+        const span = rect ? (which === 'right' ? rect.width : rect.height) : Infinity;
+        return Math.round(Math.max(MIN_SIZE[which], Math.min(px, span * MAX_SHARE)));
+    };
+
+    // Dragging the divider resizes the panel. Pointer capture keeps the moves
+    // coming even when the cursor outruns the thin handle.
+    const resizeHandlers: React.HTMLAttributes<HTMLDivElement> = {
+        onPointerDown: (e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            e.preventDefault();
+        },
+        onPointerMove: (e) => {
+            if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+            const rect = boardRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            const px = dock === 'right' ? rect.right - e.clientX : rect.bottom - e.clientY;
+            setSizes((prev) => ({ ...prev, [dock]: clampSize(dock, px) }));
+        },
+        onPointerUp: (e) => {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+            setSizes((prev) => {
+                writeStored(SIZE_KEY, prev);
+                return prev;
+            });
+        },
+    };
+
+    // Dragging the panel's grip re-docks it to whichever edge the pointer is
+    // nearer, relative to the board's size.
+    const nearestEdge = (x: number, y: number): SummaryDock | null => {
+        const rect = boardRef.current?.getBoundingClientRect();
+        if (!rect) return null;
+        const fromRight = (rect.right - x) / rect.width;
+        const fromBottom = (rect.bottom - y) / rect.height;
+        return fromBottom < fromRight ? 'bottom' : 'right';
+    };
+
+    const gripHandlers: React.HTMLAttributes<HTMLDivElement> = {
+        onPointerDown: (e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            e.preventDefault();
+            setDropTarget(dock);
+        },
+        onPointerMove: (e) => {
+            if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+            setDropTarget(nearestEdge(e.clientX, e.clientY));
+        },
+        onPointerUp: (e) => {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+            const target = nearestEdge(e.clientX, e.clientY);
+            if (target && target !== dock) setDock(target);
+            setDropTarget(null);
+        },
+        onPointerCancel: () => setDropTarget(null),
+    };
+
+    // Same rule as the default view: teachers and admins of any org on the board.
+    const canEditLeaderboard = () => {
+        if (!user || !leaderboard) return false;
+        const roles = new Set(['teacher', 'rabtteacher', 'admin']);
+        const orgs: string[] = Array.isArray(leaderboard.student_organizations) ? leaderboard.student_organizations : [];
+        return orgs.some((org) => roles.has(user.organizations?.[org]?.role));
+    };
 
     const handleCopyLink = async () => {
         try {
@@ -234,10 +381,11 @@ function ProgressLeaderboardPageContent() {
                 gap={2}
                 flexShrink={0}
             >
-                <HStack>
+                <HStack spacing={4} align="center">
                     <Tooltip label="Home">
                         <IconButton aria-label="Home" icon={<ArrowBackIcon />} onClick={() => navigate('/')} />
                     </Tooltip>
+                    <Legend />
                 </HStack>
 
                 <VStack spacing={0}>
@@ -251,6 +399,11 @@ function ProgressLeaderboardPageContent() {
 
                 <VStack justifySelf="end" align="end" spacing={1}>
                     <HStack>
+                        {canEditLeaderboard() && (
+                            <Tooltip label="Edit leaderboard">
+                                <IconButton aria-label="Edit" icon={<EditIcon />} onClick={() => setShowEdit(true)} />
+                            </Tooltip>
+                        )}
                         <Tooltip label="Copy link">
                             <IconButton aria-label="Copy link" icon={<CopyIcon />} onClick={handleCopyLink} />
                         </Tooltip>
@@ -276,19 +429,99 @@ function ProgressLeaderboardPageContent() {
                 </VStack>
             </Grid>
 
-            <Grid
+            <Flex
+                ref={boardRef}
                 flex="1"
                 minH={0}
-                overflowX="auto"
-                templateColumns="repeat(8, minmax(150px, 1fr))"
-                gap={3}
-                pb={2}
-                sx={{ scrollSnapType: 'x proximity' }}
+                direction={dock === 'right' ? 'row' : 'column'}
+                position="relative"
             >
-                {COLUMNS.map((column) => (
-                    <ProgressColumn key={column} column={column} cards={board[column]} now={boardNow} />
-                ))}
-            </Grid>
+                <Grid
+                    flex="1"
+                    minH={0}
+                    minW={0}
+                    overflowX="auto"
+                    templateColumns={`repeat(${LADDER_COLUMNS.length}, minmax(180px, 1fr))`}
+                    gap={3}
+                    pb={2}
+                    sx={{ scrollSnapType: 'x proximity' }}
+                >
+                    {LADDER_COLUMNS.map((column) => (
+                        <ProgressColumn key={column} column={column} cards={board[column]} now={boardNow} />
+                    ))}
+                </Grid>
+
+                <Tooltip label="Drag to resize" openDelay={600}>
+                    <Flex
+                        {...resizeHandlers}
+                        flexShrink={0}
+                        align="center"
+                        justify="center"
+                        cursor={dock === 'right' ? 'col-resize' : 'row-resize'}
+                        sx={{ touchAction: 'none' }}
+                        role="separator"
+                        aria-orientation={dock === 'right' ? 'vertical' : 'horizontal'}
+                        {...(dock === 'right' ? { w: '12px' } : { h: '12px' })}
+                        _hover={{ '& > div': { bg: 'gray.400' } }}
+                    >
+                        <Box
+                            borderRadius="full"
+                            bg="gray.300"
+                            {...(dock === 'right' ? { w: '4px', h: '48px' } : { h: '4px', w: '48px' })}
+                        />
+                    </Flex>
+                </Tooltip>
+
+                <Box
+                    flexShrink={0}
+                    minH={0}
+                    {...(dock === 'right'
+                        ? { w: `${sizes.right}px`, pb: 2 }
+                        : { h: `${sizes.bottom}px` })}
+                >
+                    <SummaryPanel
+                        cards={board.completed as SummaryCard[]}
+                        dock={dock}
+                        onToggleDock={() => setDock(dock === 'right' ? 'bottom' : 'right')}
+                        gripHandlers={gripHandlers}
+                    />
+                </Box>
+
+                {dropTarget && (
+                    // Preview of where the panel lands, drawn over the board.
+                    <Flex
+                        position="absolute"
+                        zIndex={10}
+                        pointerEvents="none"
+                        align="center"
+                        justify="center"
+                        bg="rgba(49,130,206,0.18)"
+                        border="3px dashed"
+                        borderColor="blue.400"
+                        borderRadius="3xl"
+                        {...(dropTarget === 'right'
+                            ? { top: 0, right: 0, bottom: 0, w: `${sizes.right}px` }
+                            : { left: 0, right: 0, bottom: 0, h: `${sizes.bottom}px` })}
+                    >
+                        <Text fontWeight="extrabold" color="blue.600" fontSize="lg">
+                            {dropTarget === 'right' ? 'Dock on the right' : 'Dock along the bottom'}
+                        </Text>
+                    </Flex>
+                )}
+            </Flex>
+
+            {showEdit && (
+                <LeaderboardModal
+                    isOpen
+                    mode="edit"
+                    existing={leaderboard}
+                    onClose={() => setShowEdit(false)}
+                    onSuccess={() => {
+                        setShowEdit(false);
+                        fetchData();
+                    }}
+                />
+            )}
         </Box>
     );
 }

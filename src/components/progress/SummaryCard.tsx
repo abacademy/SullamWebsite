@@ -1,22 +1,27 @@
 import React from 'react';
-import { Box, Text, Flex, HStack, VStack } from '@chakra-ui/react';
+import { Box, Text, Flex, HStack, VStack, Tooltip } from '@chakra-ui/react';
 import { motion } from 'framer-motion';
 import {
     SummaryCard as SummaryCardData, SummaryTile,
-    NEW_STEPS, ordinalRank, formatSulamLength, POINTS_PER_PAGE,
+    NEW_STEPS, ordinalRank, formatSulamLength, POINTS_PER_PAGE, COLUMN_THEME,
 } from '../../utils/progressLeaderboard';
+import FinishMarks from './FinishMarks';
 
 const MotionBox = motion(Box);
 
 const RANK_BG = ['yellow.200', 'gray.200', 'orange.200'] as const;
 const RANK_FG = ['yellow.800', 'gray.700', 'orange.800'] as const;
 
-type Props = { card: SummaryCardData };
+type Props = {
+    card: SummaryCardData;
+    /** Fixed width for the horizontal (bottom-docked) layout; fills the column otherwise. */
+    width?: string;
+};
 
 function StepStrip({ doneSteps }: { doneSteps: string[] }) {
     const done = new Set(doneSteps);
     return (
-        <HStack spacing="2px" w="100%">
+        <HStack spacing="2px" flex="1" minW={0}>
             {NEW_STEPS.map((step) => (
                 <Box
                     key={step}
@@ -25,7 +30,7 @@ function StepStrip({ doneSteps }: { doneSteps: string[] }) {
                     borderRadius="full"
                     bg={done.has(step) ? 'purple.500' : 'gray.200'}
                     color={done.has(step) ? 'white' : 'gray.500'}
-                    fontSize="9px"
+                    fontSize="10px"
                     fontWeight="bold"
                     display="flex"
                     alignItems="center"
@@ -41,17 +46,21 @@ function StepStrip({ doneSteps }: { doneSteps: string[] }) {
 
 function NewTile({ tile }: { tile: SummaryTile }) {
     return (
-        <Box px={1.5} py={1} bg="purple.50" borderRadius="md" border="1px solid" borderColor="purple.100">
-            <Text fontSize="9px" fontWeight="bold" color="purple.700" textAlign="center" mb="3px" noOfLines={1}>
+        <HStack spacing={1.5}>
+            <Text fontSize="xs" fontWeight="bold" color="purple.700" w="52px" flexShrink={0} noOfLines={1}>
                 {formatSulamLength(tile.pages)}
             </Text>
             <StepStrip doneSteps={tile.steps} />
-        </Box>
+        </HStack>
     );
 }
 
-export default function SummaryCard({ card }: Props) {
+export default function SummaryCard({ card, width }: Props) {
     const medal = card.rank <= 3;
+    // Tinted to the column the student is currently in, so the Summary reads
+    // as a key to where everyone is on the board.
+    const tint = COLUMN_THEME[card.stepColumn];
+
     return (
         <MotionBox
             layoutId={card.key}
@@ -60,27 +69,30 @@ export default function SummaryCard({ card }: Props) {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.45, ease: 'easeInOut' }}
-            px={2}
+            w={width}
+            flexShrink={width ? 0 : undefined}
+            px={2.5}
             py={2}
-            bg={card.finishedSullam ? 'green.100' : 'white'}
+            bg={tint.bg}
             borderRadius="xl"
             boxShadow="0 2px 8px rgba(0,0,0,0.16)"
             borderWidth="2px"
-            borderColor={card.finishedSullam ? 'green.400' : 'transparent'}
+            borderColor={tint.ring}
             sx={{ transition: 'background-color 0.6s ease, border-color 0.6s ease' }}
         >
-            {/* Rank sits on its own line so the name gets the card's full width —
-                at headline size it would not fit beside the badge in a narrow
-                column. */}
-            <Flex direction="column" align="center" gap={1} mb={1.5}>
+            {/* Rank, name and the headline total share one row. The total is
+                TotalPoints in pages, as the default leaderboard shows it — and
+                the figure this list is ranked by. */}
+            <Flex align="center" gap={2}>
                 <Box
                     px={1.5}
                     py="1px"
                     borderRadius="md"
-                    bg={medal ? RANK_BG[card.rank - 1] : 'gray.100'}
+                    bg={medal ? RANK_BG[card.rank - 1] : 'white'}
+                    flexShrink={0}
                 >
                     <Text
-                        fontSize="10px"
+                        fontSize="sm"
                         fontWeight="extrabold"
                         color={medal ? RANK_FG[card.rank - 1] : 'gray.600'}
                         lineHeight="short"
@@ -88,63 +100,41 @@ export default function SummaryCard({ card }: Props) {
                         {ordinalRank(card.rank)}
                     </Text>
                 </Box>
-                <Text
-                    fontWeight="extrabold"
-                    fontSize="xl"
-                    noOfLines={2}
-                    lineHeight="1.15"
-                    textAlign="center"
-                >
-                    {card.name}
-                </Text>
+                <Tooltip label={card.name} openDelay={400}>
+                    <Text fontWeight="extrabold" fontSize="lg" noOfLines={1} lineHeight="1.2" flex="1" minW={0}>
+                        {card.name}
+                    </Text>
+                </Tooltip>
+                <Flex align="baseline" gap={1} flexShrink={0}>
+                    <Text
+                        fontSize="2xl"
+                        fontWeight="extrabold"
+                        lineHeight="1"
+                        fontFamily="'Lexend', monospace"
+                        sx={{ fontVariantNumeric: 'tabular-nums' }}
+                    >
+                        {(card.totalPoints / POINTS_PER_PAGE).toFixed(1)}
+                    </Text>
+                    <Text fontSize="xs" fontWeight="bold" color="gray.500">pgs</Text>
+                </Flex>
             </Flex>
 
-            {/* The headline: TotalPoints in pages, as the default leaderboard
-                view shows it — and the same figure this column is ranked by. */}
-            <Box textAlign="center" mb={1.5}>
-                <Text
-                    fontSize="2xl"
-                    fontWeight="extrabold"
-                    lineHeight="1"
-                    fontFamily="'Lexend', monospace"
-                    sx={{ fontVariantNumeric: 'tabular-nums' }}
-                >
-                    {(card.totalPoints / POINTS_PER_PAGE).toFixed(1)}
-                </Text>
-                <Text fontSize="9px" fontWeight="bold" color="gray.500" mt="2px">
-                    total pages
-                </Text>
-            </Box>
-
-            <Box
-                px={1.5}
-                py={0.5}
-                mb={card.newTiles.length ? 1.5 : 0}
-                borderRadius="md"
-                border="1px solid"
-                borderColor={card.qadeemStar ? 'green.400' : 'gray.200'}
-                bg={card.qadeemStar ? 'green.50' : 'transparent'}
-            >
-                <Text fontSize="9px" fontWeight="bold" color="gray.500" textAlign="center" mb="1px">
-                    Qadeem
-                </Text>
-                <Text fontSize="xs" color="gray.700" textAlign="center" lineHeight="short">
-                    {card.qadeemPages.toFixed(1)} pgs
-                    {card.qadeemStar && <Box as="span" color="#D4A017"> ✭</Box>}
-                </Text>
-            </Box>
+            <Flex align="center" justify="space-between" gap={2} mt={1.5}>
+                <Box px={2} py={0.5} borderRadius="md" bg="white" border="1px solid" borderColor="gray.200">
+                    <Text fontSize="sm" color="gray.700" lineHeight="short" whiteSpace="nowrap">
+                        <Box as="span" fontWeight="bold" color="gray.500">Qadeem </Box>
+                        {card.qadeemPages.toFixed(1)} pgs
+                    </Text>
+                </Box>
+                <FinishMarks count={card.finishedCount} star={card.qadeemStar} size={22} />
+            </Flex>
 
             {card.newTiles.length > 0 && (
-                <Box>
-                    <Text fontSize="9px" fontWeight="bold" color="purple.600" textAlign="center" mb={1}>
-                        New
-                    </Text>
-                    <VStack align="stretch" spacing={1}>
-                        {card.newTiles.map((tile, i) => (
-                            <NewTile key={`n${i}`} tile={tile} />
-                        ))}
-                    </VStack>
-                </Box>
+                <VStack align="stretch" spacing={1} mt={1.5}>
+                    {card.newTiles.map((tile, i) => (
+                        <NewTile key={`n${i}`} tile={tile} />
+                    ))}
+                </VStack>
             )}
         </MotionBox>
     );

@@ -3,8 +3,9 @@ import { Box, Text, Flex, Tooltip } from '@chakra-ui/react';
 import { motion } from 'framer-motion';
 import {
     SullamCard as SullamCardData, ColumnKey, StaleLevel,
-    formatDuration, getStaleLevel, COLUMN_THEME, formatSulamLength,
+    formatOpenFor, getStaleLevel, COLUMN_THEME, formatSulamLength,
 } from '../../utils/progressLeaderboard';
+import FinishMarks from './FinishMarks';
 
 const MotionBox = motion(Box);
 
@@ -31,7 +32,7 @@ export default function SullamCard({ card, column, now }: Props) {
     const { accent } = COLUMN_THEME[column];
     // The running counter itself, so a sulam at 51 reads 51 rather than 44.
     const badge = column === 'completed' ? '🏆' : (card.step ?? 0);
-    const openFor = card.createdAt != null ? formatDuration(now - card.createdAt) : '—';
+    const openFor = card.createdAt != null ? formatOpenFor(now - card.createdAt) : '—';
 
     return (
         <MotionBox
@@ -51,48 +52,29 @@ export default function SullamCard({ card, column, now }: Props) {
             sx={{ transition: 'background-color 0.6s ease, border-color 0.6s ease' }}
             position="relative"
         >
-            {card.ownerFinishedSullam && (
-                // Sits on the corner rather than inside it, so it never crowds
-                // the step number, and stays readable on a yellow or red card.
-                <Tooltip label="Finished a sullam this session" openDelay={400}>
-                    <Flex
-                        position="absolute"
-                        top="-8px"
-                        right="-8px"
-                        w="22px"
-                        h="22px"
-                        borderRadius="full"
-                        bg="green.500"
-                        color="white"
-                        fontSize="xs"
-                        fontWeight="extrabold"
-                        align="center"
-                        justify="center"
-                        border="2px solid white"
-                        boxShadow="0 1px 4px rgba(0,0,0,0.25)"
-                    >
-                        ✓
-                    </Flex>
-                </Tooltip>
-            )}
+            {/* Sits on the corner rather than inside it, so it never crowds
+                the step number, and stays readable on a yellow or red card. */}
+            <Flex position="absolute" top="-10px" right="-8px">
+                <FinishMarks count={card.ownerFinishedCount} star={card.ownerQadeemStar} />
+            </Flex>
             <Flex justify="space-between" align="flex-start" gap={2}>
                 <Box minW={0}>
                     <Tooltip label={card.label ? `${card.name} · ${card.label}` : card.name} openDelay={400}>
-                        <Text fontWeight="bold" fontSize="sm" noOfLines={2} lineHeight="short">
+                        <Text fontWeight="extrabold" fontSize="lg" noOfLines={2} lineHeight="1.15">
                             {card.name}
                         </Text>
                     </Tooltip>
-                    <Text fontSize="xs" color="gray.500" mt={0.5}>
+                    <Text fontSize="sm" color="gray.500" mt={0.5}>
                         ({formatSulamLength(card.pages)})
                     </Text>
                     {card.startedFrom && (
-                        <Text fontSize="xs" color="gray.500" mt={0.5} whiteSpace="nowrap">
+                        <Text fontSize="sm" color="gray.500" mt={0.5} whiteSpace="nowrap">
                             Started from {card.startedFrom}
                         </Text>
                     )}
                 </Box>
                 <Text
-                    fontSize="xl"
+                    fontSize="3xl"
                     fontWeight="extrabold"
                     color={accent}
                     lineHeight="1"
@@ -105,7 +87,7 @@ export default function SullamCard({ card, column, now }: Props) {
             <Text
                 mt={2}
                 textAlign="center"
-                fontSize="lg"
+                fontSize="2xl"
                 fontWeight="bold"
                 fontFamily="'Lexend', monospace"
                 // Proportional digits make a per-second timer visibly jitter,

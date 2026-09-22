@@ -150,7 +150,7 @@ export const COLUMN_LABEL: Record<ColumnKey, string> = {
  * Panel tints stay pale on purpose: staleness is carried by the card itself
  * (see STALE_STYLES in SullamCard), and a strong panel would compete with it.
  */
-export type ColumnTheme = { bg: string; accent: string };
+export type ColumnTheme = { bg: string; accent: string; ring: string };
 
 export const NEW_STEPS = ['11', '22', '33', '44', '55'] as const;
 export const QADEEM_STEPS = ['5', '4', '3', '2', '1'] as const;
@@ -167,14 +167,14 @@ export function ordinalRank(n: number): string {
 }
 
 export const COLUMN_THEME: Record<ColumnKey, ColumnTheme> = {
-    'not-started': { bg: 'teal.50', accent: 'teal.600' },
-    'qadeem': { bg: 'blue.50', accent: 'blue.500' },
-    'new': { bg: 'green.50', accent: 'green.600' },
-    '11': { bg: 'cyan.50', accent: 'cyan.700' },
-    '22': { bg: 'purple.50', accent: 'purple.600' },
-    '33': { bg: 'orange.50', accent: 'orange.600' },
-    '44': { bg: 'pink.50', accent: 'pink.600' },
-    'completed': { bg: 'gray.100', accent: 'gray.700' },
+    'not-started': { bg: 'teal.50', accent: 'teal.600', ring: 'teal.200' },
+    'qadeem': { bg: 'blue.50', accent: 'blue.500', ring: 'blue.200' },
+    'new': { bg: 'green.50', accent: 'green.600', ring: 'green.200' },
+    '11': { bg: 'cyan.50', accent: 'cyan.700', ring: 'cyan.200' },
+    '22': { bg: 'purple.50', accent: 'purple.600', ring: 'purple.200' },
+    '33': { bg: 'orange.50', accent: 'orange.600', ring: 'orange.200' },
+    '44': { bg: 'pink.50', accent: 'pink.600', ring: 'pink.200' },
+    'completed': { bg: 'gray.100', accent: 'gray.700', ring: 'gray.300' },
 };
 
 // ---------------------------------------------------------------------------
@@ -200,6 +200,10 @@ export type SullamCard = {
     startedFrom?: string | null;
     /** The student already took another sullam to 55 this session. */
     ownerFinishedSullam: boolean;
+    /** How many sullams the student took to 55 this session. */
+    ownerFinishedCount: number;
+    /** The student earned their qadeem star today. */
+    ownerQadeemStar: boolean;
 };
 
 export type StudentCard = {
@@ -214,6 +218,10 @@ export type StudentCard = {
     rangePages?: number;
     /** Total lines across the student's completed sullams. 'completed' only. */
     lines?: number;
+    /** How many sullams the student took to 55 this session. */
+    finishedCount: number;
+    /** The student earned their qadeem star today. */
+    qadeemStar: boolean;
 };
 
 export type SummaryTile = {
@@ -233,6 +241,13 @@ export type SummaryCard = {
     newTiles: SummaryTile[];
     /** Took a sullam all the way to 55 during this session. */
     finishedSullam: boolean;
+    /** How many sullams went to 55 during this session. */
+    finishedCount: number;
+    /**
+     * The column the student is furthest along in — their furthest open sullam,
+     * else Qadeem / Listening. Tints the card to match that column.
+     */
+    stepColumn: ColumnKey;
 };
 
 export type BoardCard = SullamCard | StudentCard | SummaryCard;
@@ -250,6 +265,22 @@ export function formatDuration(ms: number): string {
     const m = Math.floor((total % 3600) / 60);
     const s = total % 60;
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+const DAY_MS = 24 * 3600_000;
+
+/**
+ * The "open for" label on a sullam card: a live HH:MM:SS timer for the first
+ * day, then a relative age, since a 168:00:00 timer is unreadable from across
+ * the room and the seconds no longer matter.
+ */
+export function formatOpenFor(ms: number): string {
+    if (!isFinite(ms) || ms < DAY_MS) return formatDuration(ms);
+    const days = Math.floor(ms / DAY_MS);
+    const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'} ago`;
+    if (days < 14) return plural(days, 'day');
+    if (days < 60) return plural(Math.floor(days / 7), 'week');
+    return plural(Math.floor(days / 30), 'month');
 }
 
 /**
@@ -353,14 +384,19 @@ function emptyBoard(): Board {
  * date gets the benefit of the doubt.
  */
 export function finishedSullamInSession(items: ProgressItem[] | undefined, leaderboardStartMs: number): boolean {
-    return (items || []).some((item) => {
+    return finishedSullamCountInSession(items, leaderboardStartMs) > 0;
+}
+
+/** How many sullams reached 55 during the session. Same rules as finishedSullamInSession. */
+export function finishedSullamCountInSession(items: ProgressItem[] | undefined, leaderboardStartMs: number): number {
+    return (items || []).filter((item) => {
         const column = item.count == null
             ? stepToColumn(resolveCurrentStep(item))
             : countToColumn(item.count);
         if (column !== 'completed') return false;
         const finishedAt = parseTime(item.last_step_date);
         return finishedAt == null || finishedAt >= leaderboardStartMs;
-    });
+    }).length;
 }
 
 function tilesFromProgress(items?: ProgressItem[]): SummaryTile[] {
@@ -377,11 +413,12 @@ function tilesFromProgress(items?: ProgressItem[]): SummaryTile[] {
  *
  * The last six columns hold one card per sullam. The first two are per student:
  * a student sits in Qadeem while their old section is in progress, moves to
- * "Did not start" once it is done, and leaves that column as soon as they open
- * a sullam. Summary lists everyone, ranked like the total leaderboard.
+ * Listening once it is done, and leaves that column while they have a sullam
+ * open — coming back once every sullam is taken to 55. Summary lists everyone, ranked like the total leaderboard.
  */
 export function buildBoard(rows: StudentRow[], leaderboardStartMs: number): Board {
     const board = emptyBoard();
+    const stepColumnFor: Record<string, ColumnKey> = {};
 
     rows.forEach((row) => {
         // Fall back to "did they do any qadeem in the window" on an API that
@@ -391,7 +428,9 @@ export function buildBoard(rows: StudentRow[], leaderboardStartMs: number): Boar
         // board reads strictly left to right: Qadeem -> Did not start -> ladder.
         const qadeemInProgress = hasQadeem && row.QadeemStatus !== true;
         const items = qadeemInProgress ? [] : (row.NewSullamProgress || []);
-        const finishedSullam = finishedSullamInSession(row.NewSullamProgress, leaderboardStartMs);
+        const finishedCount = finishedSullamCountInSession(row.NewSullamProgress, leaderboardStartMs);
+        const qadeemStar = row.QadeemStatus === true;
+        let furthest: ColumnKey | null = null;
 
         items.forEach((item, i) => {
             const rangePoints = item.range_points || 0;
@@ -423,7 +462,9 @@ export function buildBoard(rows: StudentRow[], leaderboardStartMs: number): Boar
                 currentStep: step,
                 step: item.count ?? null,
                 startedFrom: item.started_from ?? null,
-                ownerFinishedSullam: finishedSullam,
+                ownerFinishedSullam: finishedCount > 0,
+                ownerFinishedCount: finishedCount,
+                ownerQadeemStar: qadeemStar,
             };
 
             if (column === 'completed') {
@@ -432,8 +473,16 @@ export function buildBoard(rows: StudentRow[], leaderboardStartMs: number): Boar
                 return;
             }
 
+            if (furthest === null || COLUMNS.indexOf(column) > COLUMNS.indexOf(furthest)) {
+                furthest = column;
+            }
+
             board[column].push(card);
         });
+
+        stepColumnFor[row.user_id] = qadeemInProgress
+            ? 'qadeem'
+            : (furthest ?? 'not-started');
 
         if (qadeemInProgress) {
             // X/Y = page-reps done over page-reps required today. Z is Y
@@ -463,9 +512,12 @@ export function buildBoard(rows: StudentRow[], leaderboardStartMs: number): Boar
                 donePages: done,
                 totalPages: total,
                 rangePages,
+                finishedCount,
+                qadeemStar,
             });
-        } else if (items.length === 0) {
-            // Qadeem done (or none to do) and nothing opened yet.
+        } else if (furthest === null) {
+            // Qadeem done (or none to do) and no open sullam — either nothing
+            // opened yet, or everything taken to 55 and waiting on the next.
             board['not-started'].push({
                 kind: 'student',
                 key: `n:${row.user_id}`,
@@ -474,6 +526,8 @@ export function buildBoard(rows: StudentRow[], leaderboardStartMs: number): Boar
                 variant: 'idle',
                 donePages: 0,
                 totalPages: 0,
+                finishedCount,
+                qadeemStar,
             });
         }
     });
@@ -482,6 +536,7 @@ export function buildBoard(rows: StudentRow[], leaderboardStartMs: number): Boar
         // Jalseh-only pages. Do not fall back to the 5am-day X — that is
         // what put pre-session qadeem on a later board.
         const covered = row.QadeemCoveredInWindow ?? 0;
+        const finishedCount = finishedSullamCountInSession(row.NewSullamProgress, leaderboardStartMs);
         return {
             kind: 'summary',
             key: `s:${row.user_id}`,
@@ -492,7 +547,9 @@ export function buildBoard(rows: StudentRow[], leaderboardStartMs: number): Boar
             qadeemPages: roundToHalf(covered / POINTS_PER_PAGE),
             qadeemStar: row.QadeemStatus === true,
             newTiles: tilesFromProgress(row.NewSullamProgress),
-            finishedSullam: finishedSullamInSession(row.NewSullamProgress, leaderboardStartMs),
+            finishedSullam: finishedCount > 0,
+            finishedCount,
+            stepColumn: stepColumnFor[row.user_id] ?? 'not-started',
         };
     });
     summaries.sort((a, b) => {

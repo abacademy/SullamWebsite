@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Text, Flex, Tooltip } from '@chakra-ui/react';
 import { motion } from 'framer-motion';
 import { StudentCard as StudentCardData } from '../../utils/progressLeaderboard';
+import FinishMarks from './FinishMarks';
 
 const MotionBox = motion(Box);
 
@@ -30,33 +31,39 @@ export default function StudentCard({ card }: Props) {
             bg="white"
             borderRadius="xl"
             boxShadow="0 2px 8px rgba(0,0,0,0.16)"
+            position="relative"
         >
+            {/* Same corner badges as a sullam card, so a student back in
+                Listening after finishing still shows what they did. */}
+            <Flex position="absolute" top="-10px" right="-8px">
+                <FinishMarks count={card.finishedCount} star={card.qadeemStar} />
+            </Flex>
             <Flex justify="space-between" align="center" gap={2}>
                 <Box minW={0}>
                     <Tooltip label={card.name} openDelay={400}>
-                        <Text fontWeight="bold" fontSize="sm" noOfLines={2} lineHeight="short">
+                        <Text fontWeight="extrabold" fontSize="lg" noOfLines={2} lineHeight="1.15">
                             {card.name}
                         </Text>
                     </Tooltip>
                     {isQadeem && card.rangePages != null && (
-                        <Text fontSize="xs" color="gray.500" mt={0.5} whiteSpace="nowrap">
+                        <Text fontSize="sm" color="gray.500" mt={0.5} whiteSpace="nowrap">
                             {card.rangePages.toFixed(1)} pgs
                         </Text>
                     )}
                 </Box>
 
                 {isCompleted && card.lines != null && (
-                    <Text fontSize="sm" fontWeight="bold" color="green.600" flexShrink={0} whiteSpace="nowrap">
+                    <Text fontSize="lg" fontWeight="bold" color="green.600" flexShrink={0} whiteSpace="nowrap">
                         {card.lines.toFixed(1)} lines
                     </Text>
                 )}
 
                 {isQadeem && card.totalPages > 0 && (
-                    <Text fontSize="sm" fontWeight="bold" flexShrink={0} whiteSpace="nowrap">
+                    <Text fontSize="xl" fontWeight="bold" flexShrink={0} whiteSpace="nowrap">
                         {card.donePages.toFixed(1)}
                         <Box as="span" color="gray.400" fontWeight="normal"> / </Box>
                         <Box as="span" color="blue.500">{card.totalPages.toFixed(1)}</Box>
-                        <Box as="span" color="gray.400" fontWeight="normal" fontSize="xs"> pgs</Box>
+                        <Box as="span" color="gray.400" fontWeight="normal" fontSize="sm"> pgs</Box>
                     </Text>
                 )}
             </Flex>

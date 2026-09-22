@@ -1,5 +1,5 @@
 import {
-    buildBoard, formatDuration, formatSulamLength, getStaleLevel, stepToColumn, countToColumn,
+    buildBoard, formatDuration, formatOpenFor, formatSulamLength, getStaleLevel, stepToColumn, countToColumn,
     resolveCurrentStep, parseApiDate, StudentRow, SullamCard, POINTS_PER_PAGE,
 } from './progressLeaderboard';
 
@@ -350,7 +350,7 @@ describe('staleness', () => {
     const card = (over: Partial<SullamCard> = {}): SullamCard => ({
         kind: 'sullam', key: 'k', userId: 'u1', name: 'Ahmad',
         pages: 1, lines: 15, createdAt: START, staleClockStart: START,
-        currentStep: null, step: 0, ownerFinishedSullam: false, ...over,
+        currentStep: null, step: 0, ownerFinishedSullam: false, ownerFinishedCount: 0, ownerQadeemStar: false, ...over,
     });
 
     it('crosses to yellow at 15 min/page and red at 22 min/page', () => {
@@ -480,5 +480,87 @@ describe('finished-sullam badge on ladder cards', () => {
         const board = buildBoard([row({ NewSullamProgress: [sulam({ count: 22 })] })], START);
         const card = board['22'][0];
         expect(card.kind === 'sullam' && card.ownerFinishedSullam).toBe(false);
+    });
+});
+
+describe('formatOpenFor', () => {
+    const HOUR = 3600_000;
+    it('keeps the live timer for the first day', () => {
+        expect(formatOpenFor(0)).toBe('00:00:00');
+        expect(formatOpenFor(23 * HOUR + 59 * 60_000)).toBe('23:59:00');
+    });
+    it('switches to a relative age after a day', () => {
+        expect(formatOpenFor(24 * HOUR)).toBe('1 day ago');
+        expect(formatOpenFor(168 * HOUR)).toBe('7 days ago');
+        expect(formatOpenFor(14 * 24 * HOUR)).toBe('2 weeks ago');
+        expect(formatOpenFor(90 * 24 * HOUR)).toBe('3 months ago');
+    });
+});
+
+describe('finished-sullam count and qadeem star', () => {
+    const board = () => buildBoard([row({
+        HasQadeem: true, QadeemStatus: true,
+        NewSullamProgress: [
+            sulam({ sulam_id: 'a', count: 55, last_step_date: '2026-08-26T13:00:00Z' }),
+            sulam({ sulam_id: 'b', count: 60, last_step_date: '2026-08-26T14:00:00Z' }),
+            sulam({ sulam_id: 'old', count: 55, last_step_date: '2026-08-25T13:00:00Z' }),
+            sulam({ sulam_id: 'open', count: 30 }),
+        ],
+    })], START);
+
+    it('counts every sullam finished in session on ladder cards', () => {
+        const card = board()['22'][0];
+        expect(card.kind === 'sullam' && card.ownerFinishedCount).toBe(2);
+        expect(card.kind === 'sullam' && card.ownerQadeemStar).toBe(true);
+    });
+
+    it('counts them on the Summary card too', () => {
+        const card = board().completed[0];
+        expect(card.kind === 'summary' && card.finishedCount).toBe(2);
+    });
+});
+
+describe('summary card step column', () => {
+    const stepOf = (over: Partial<StudentRow>) => {
+        const card = buildBoard([row(over)], START).completed[0];
+        return card.kind === 'summary' ? card.stepColumn : null;
+    };
+
+    it('is Qadeem while qadeem is in progress', () => {
+        expect(stepOf({ HasQadeem: true, QadeemStatus: false })).toBe('qadeem');
+    });
+    it('is Listening with nothing opened', () => {
+        expect(stepOf({ HasQadeem: false, QadeemStatus: false })).toBe('not-started');
+    });
+    it('follows the furthest open sullam', () => {
+        expect(stepOf({
+            HasQadeem: false,
+            NewSullamProgress: [sulam({ sulam_id: 'a', count: 12 }), sulam({ sulam_id: 'b', count: 35 })],
+        })).toBe('33');
+    });
+    it('is Listening again once every sullam is finished', () => {
+        expect(stepOf({ HasQadeem: false, NewSullamProgress: [sulam({ count: 55 })] })).toBe('not-started');
+    });
+});
+
+describe('Listening column', () => {
+    it('takes back a student whose sullams are all finished', () => {
+        const b = buildBoard([row({
+            HasQadeem: true, QadeemStatus: true,
+            NewSullamProgress: [sulam({ sulam_id: 'a', count: 55 }), sulam({ sulam_id: 'b', count: 60 })],
+        })], START);
+        expect(b['not-started'].map((c) => c.name)).toEqual(['Ahmad']);
+        const card = b['not-started'][0];
+        expect(card.kind === 'student' && card.finishedCount).toBe(2);
+        expect(card.kind === 'student' && card.qadeemStar).toBe(true);
+    });
+
+    it('leaves out a student with an open sullam', () => {
+        const b = buildBoard([row({
+            HasQadeem: false,
+            NewSullamProgress: [sulam({ sulam_id: 'a', count: 55 }), sulam({ sulam_id: 'b', count: 12 })],
+        })], START);
+        expect(b['not-started']).toHaveLength(0);
+        expect(b['11']).toHaveLength(1);
     });
 });
