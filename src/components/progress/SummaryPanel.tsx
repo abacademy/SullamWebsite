@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Box, Flex, Text, IconButton, Tooltip } from '@chakra-ui/react';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { SummaryCard as SummaryCardData, COLUMN_THEME, COLUMN_LABEL } from '../../utils/progressLeaderboard';
 import SummaryCard from './SummaryCard';
 
@@ -9,6 +9,12 @@ export type SummaryDock = 'right' | 'bottom';
 /** Ranks pinned outside the scroller, so the podium stays on screen however long the list gets. */
 const PINNED = 3;
 const HORIZONTAL_CARD_WIDTH = '280px';
+
+// The scrollers are motion elements only so they can take `layoutScroll`:
+// without it framer reads the auto-scroll offset as the cards having moved,
+// and every re-render (the page ticks once a second) animates them back.
+const MotionBox = motion(Box);
+const MotionFlex = motion(Flex);
 
 /** Auto-scroll speed through ranks 4+, and how long it rests at each end. */
 const SCROLL_PX_PER_SEC = 30;
@@ -25,16 +31,22 @@ function useAutoScroll(ref: React.RefObject<HTMLDivElement | null>, axis: 'x' | 
         if (!el) return;
         let raf = 0;
         let last = performance.now();
+        const read = () => (axis === 'y' ? el.scrollTop : el.scrollLeft);
         // scrollTop only takes whole pixels, so carry the fraction ourselves
         // or a slow speed would never move at all.
-        let pos = axis === 'y' ? el.scrollTop : el.scrollLeft;
+        let pos = read();
+        // What we last wrote. If the real position drifts from it, something
+        // else moved the list (a hand scroll, scroll anchoring as cards come
+        // and go) and we pick up from there instead of yanking it back.
+        let written = pos;
         let pausedUntil = last + SCROLL_PAUSE_MS;
         let hovered = false;
 
         const onEnter = () => { hovered = true; };
         const onLeave = () => {
             hovered = false;
-            pos = axis === 'y' ? el.scrollTop : el.scrollLeft;
+            pos = read();
+            written = pos;
             pausedUntil = performance.now() + SCROLL_PAUSE_MS / 2;
         };
         el.addEventListener('pointerenter', onEnter);
@@ -45,14 +57,17 @@ function useAutoScroll(ref: React.RefObject<HTMLDivElement | null>, axis: 'x' | 
             last = t;
             const max = axis === 'y' ? el.scrollHeight - el.clientHeight : el.scrollWidth - el.clientWidth;
             if (!hovered && max > 0 && t >= pausedUntil) {
+                if (Math.abs(read() - written) > 1) pos = read();
                 if (pos >= max) {
                     // Rested at the end: back to the top, then rest there too.
                     pos = 0;
+                    written = 0;
                     el.scrollTo({ [axis === 'y' ? 'top' : 'left']: 0, behavior: 'smooth' });
                     pausedUntil = t + SCROLL_PAUSE_MS;
                 } else {
                     pos = Math.min(max, pos + (SCROLL_PX_PER_SEC * dt) / 1000);
                     if (axis === 'y') el.scrollTop = pos; else el.scrollLeft = pos;
+                    written = read();
                     if (pos >= max) pausedUntil = t + SCROLL_PAUSE_MS;
                 }
             }
@@ -161,9 +176,9 @@ export default function SummaryPanel({ cards, dock, onToggleDock, gripHandlers }
                     <Flex gap={2.5} flexShrink={0} align="stretch" pr={2.5} mr={2.5} borderRight="2px solid" borderColor="gray.300">
                         <AnimatePresence>{renderCards(pinned)}</AnimatePresence>
                     </Flex>
-                    <Flex ref={scrollerRef} gap={2.5} flex="1" minW={0} overflowX="auto" align="stretch" sx={AUTO_SCROLLBAR}>
+                    <MotionFlex ref={scrollerRef} layoutScroll gap={2.5} flex="1" minW={0} overflowX="auto" align="stretch" sx={AUTO_SCROLLBAR}>
                         <AnimatePresence>{renderCards(rest)}</AnimatePresence>
-                    </Flex>
+                    </MotionFlex>
                 </Flex>
             ) : (
                 <Flex direction="column" flex="1" minH={0}>
@@ -181,8 +196,9 @@ export default function SummaryPanel({ cards, dock, onToggleDock, gripHandlers }
                     </Flex>
                     {/* Always mounted (even when empty) so the auto-scroll hook
                         has a stable element to attach to. */}
-                    <Box
+                    <MotionBox
                         ref={scrollerRef}
+                        layoutScroll
                         flex="1"
                         minH={0}
                         overflowY="auto"
@@ -194,7 +210,7 @@ export default function SummaryPanel({ cards, dock, onToggleDock, gripHandlers }
                         <Flex direction="column" gap={2.5}>
                             <AnimatePresence>{renderCards(rest)}</AnimatePresence>
                         </Flex>
-                    </Box>
+                    </MotionBox>
                 </Flex>
             )}
         </Flex>

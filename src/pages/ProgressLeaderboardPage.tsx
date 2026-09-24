@@ -15,7 +15,7 @@ import ProgressBanner, { Banner } from '../components/progress/ProgressBanner';
 import SummaryPanel, { SummaryDock } from '../components/progress/SummaryPanel';
 import { BASE_URL } from '../constants/ApiConfig';
 import {
-    StudentRow, COLUMNS, REFRESH_INTERVAL, BANNER_DURATION_MS, MAX_BANNERS,
+    StudentRow, COLUMNS, REFRESH_INTERVAL, BANNER_HOLD_MS, MAX_BANNERS,
     buildBoard, resolveCurrentStep, parseApiDate, countToColumn, stepToColumn,
     COLUMN_LABEL, ColumnKey, SummaryCard,
 } from '../utils/progressLeaderboard';
@@ -94,6 +94,8 @@ function ProgressLeaderboardPageContent() {
     const [failed, setFailed] = useState(false);
     const [now, setNow] = useState(() => Date.now());
     const [banners, setBanners] = useState<Banner[]>([]);
+    /** The banner whose entrance animation has finished; its hold starts then. */
+    const [enteredBannerId, setEnteredBannerId] = useState<string | null>(null);
     const [showEdit, setShowEdit] = useState(false);
 
     const [dock, setDockState] = useState<SummaryDock>(() => {
@@ -209,15 +211,16 @@ function ProgressLeaderboardPageContent() {
         });
     }, []);
 
-    // Show the head of the queue for its slot, then move on to the next.
+    // Show the head of the queue until it has finished arriving plus its hold,
+    // then move on to the next.
     const currentBanner = banners[0] ?? null;
     useEffect(() => {
-        if (!currentBanner) return;
+        if (!currentBanner || enteredBannerId !== currentBanner.id) return;
         const t = setTimeout(() => {
             setBanners((prev) => prev.filter((x) => x.id !== currentBanner.id));
-        }, BANNER_DURATION_MS);
+        }, BANNER_HOLD_MS);
         return () => clearTimeout(t);
-    }, [currentBanner]);
+    }, [currentBanner, enteredBannerId]);
 
     /** Diff this poll against the last one and announce what moved. */
     const detectChanges = useCallback((rows: StudentRow[]) => {
@@ -372,7 +375,7 @@ function ProgressLeaderboardPageContent() {
 
     return (
         <Box h="100vh" display="flex" flexDirection="column" overflow="hidden" p={4} bg="#E8EAF1">
-            <ProgressBanner banner={currentBanner} />
+            <ProgressBanner banner={currentBanner} onEntered={setEnteredBannerId} />
 
             <Grid
                 templateColumns={['1fr auto 1fr', null, '1fr auto 1fr']}

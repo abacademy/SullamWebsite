@@ -16,7 +16,8 @@ export const STALE_YELLOW_MIN_PER_PAGE = 15;
 /** ...and red after this one. Both are per page, so longer sullams get more slack. */
 export const STALE_RED_MIN_PER_PAGE = 22;
 
-export const BANNER_DURATION_MS = 6000;
+/** How long a banner holds once its entrance animation has finished. */
+export const BANNER_HOLD_MS = 2000;
 export const MAX_BANNERS = 4;
 
 export const POINTS_PER_PAGE = 550;

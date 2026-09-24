@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { Box, Text, VStack } from '@chakra-ui/react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -12,6 +12,8 @@ export type Banner = {
 
 const CONFETTI_COLORS = ['#FFD166', '#06D6A0', '#EF476F', '#FF9F1C', '#A78BFA', '#4CC9F0'];
 const CONFETTI_PIECES = 36;
+/** The card, its icon and its message: the banner has arrived once all three settle. */
+const ENTRANCE_PARTS = 3;
 
 /**
  * A one-shot burst behind a banner.
@@ -60,6 +62,8 @@ function Confetti({ seed }: { seed: number }) {
 type Props = {
     /** The announcement on screen, or null. The page feeds these one at a time. */
     banner: Banner | null;
+    /** Called with the banner's id once its entrance animation has finished. */
+    onEntered: (id: string) => void;
 };
 
 /**
@@ -69,7 +73,16 @@ type Props = {
  * the room, so an event has to be readable from the back. That size means only
  * one fits at a time — the page queues them and hands over the head.
  */
-export default function ProgressBanner({ banner }: Props) {
+export default function ProgressBanner({ banner, onEntered }: Props) {
+    // Counts settled entrance parts for the banner on screen. Keyed by id so
+    // the card's exit animation completing doesn't count towards the next one.
+    const settled = useRef({ id: '', count: 0 });
+    const partDone = () => {
+        if (!banner) return;
+        if (settled.current.id !== banner.id) settled.current = { id: banner.id, count: 0 };
+        if (++settled.current.count === ENTRANCE_PARTS) onEntered(banner.id);
+    };
+
     return (
         // Let one banner finish leaving before the next arrives, rather than
         // cross-fading two full-screen panels over each other.
@@ -107,6 +120,7 @@ export default function ProgressBanner({ banner }: Props) {
                             opacity: 1, scale: 1, y: 0,
                             transition: { type: 'spring', stiffness: 260, damping: 22 },
                         }}
+                        onAnimationComplete={partDone}
                         exit={{
                             opacity: 0, scale: 0.85, y: -60,
                             transition: { duration: 0.4, ease: 'easeIn' },
@@ -118,6 +132,7 @@ export default function ProgressBanner({ banner }: Props) {
                                 initial={{ scale: 0, rotate: -20 }}
                                 animate={{ scale: 1, rotate: 0 }}
                                 transition={{ type: 'spring', stiffness: 300, damping: 12, delay: 0.15 }}
+                                onAnimationComplete={partDone}
                             >
                                 <Text fontSize="min(18vh, 14vw)" lineHeight="1">{banner.icon}</Text>
                             </MotionBox>
@@ -125,6 +140,7 @@ export default function ProgressBanner({ banner }: Props) {
                                 initial={{ opacity: 0, y: 30 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.4, delay: 0.25, ease: 'easeOut' }}
+                                onAnimationComplete={partDone}
                             >
                                 <Text
                                     fontSize="min(8vh, 5.5vw)"
