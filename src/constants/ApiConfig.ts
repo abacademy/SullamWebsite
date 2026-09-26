@@ -15,7 +15,7 @@
 // ⚠️ CHANGE THIS TO SWITCH ENVIRONMENTS ⚠️
 // Set to 'local', 'dev', or 'prod'
 type Environment = 'local' | 'dev' | 'prod' | 'prod2';
-const MODE: Environment = 'local';
+const MODE: Environment = 'prod';
 
 const BASE_URL_MAP: Record<Environment, string> = {
     local: 'http://127.0.0.1:5002',
