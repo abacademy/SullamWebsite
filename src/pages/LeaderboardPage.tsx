@@ -40,6 +40,7 @@ function LeaderboardPageContent() {
     const [lastRanks, setLastRanks] = useState<Record<string, number>>({});
     const [loading, setLoading] = useState(true);
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
+    const orgUsersRequested = useRef(false);
     const [showEdit, setShowEdit] = useState(false);
     const [showTeacherSummary, setShowTeacherSummary] = useState(false);
     const [orgUsers, setOrgUsers] = useState<Record<string, OrgUser[]>>({});
@@ -59,7 +60,6 @@ function LeaderboardPageContent() {
     useEffect(() => {
         if (!id) return;
         fetchData();
-        fetchOrgUsers();
         intervalRef.current = setInterval(fetchData, REFRESH_INTERVAL);
         return () => {
             if (intervalRef.current) clearInterval(intervalRef.current);
@@ -76,6 +76,14 @@ function LeaderboardPageContent() {
             setArrivalByTeacher({});
         }
     }, [id]);
+
+    // Org users are only the Teacher Summary's fallback for a student's teacher,
+    // so don't download every org's users until that view is first opened.
+    useEffect(() => {
+        if (!showTeacherSummary || orgUsersRequested.current) return;
+        orgUsersRequested.current = true;
+        fetchOrgUsers();
+    }, [showTeacherSummary]);
 
     const fetchOrgUsers = async () => {
         try {

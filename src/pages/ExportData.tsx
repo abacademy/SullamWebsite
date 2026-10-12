@@ -12,7 +12,6 @@ import {
     Accordion,
     AccordionItem,
     AccordionButton,
-    AccordionPanel,
     AccordionIcon,
     Button,
     useToast,
@@ -30,6 +29,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { UserContext } from '../utils/UserContext';
 import AuthGuard from '../components/AuthGuard';
+import LazyAccordionPanel from '../components/LazyAccordionPanel';
 import * as XLSX from 'xlsx';
 import { BASE_URL } from '../constants/ApiConfig';
 
@@ -72,6 +72,168 @@ const idStr = (v: any): string => {
     if (typeof v === 'object' && '$oid' in v) return v.$oid;
     return String(v);
 };
+
+// data types that came back split into school/home columns
+function getSplitDataTypes(loadedData: any): Set<string> {
+    return new Set(
+        loadedData.dataTypes.filter((dataType: string) =>
+            loadedData.students.some((s: any) =>
+                s[`${dataType}_school`] !== undefined || s[`${dataType}_home`] !== undefined
+            )
+        )
+    );
+}
+
+// Memoized so that typing in the form above doesn't re-render a row per exported student.
+const PreviewTable = React.memo(function PreviewTable({ loadedData }: { loadedData: any }) {
+    const splitDataTypes = useMemo(() => getSplitDataTypes(loadedData), [loadedData]);
+
+    return (
+        <TableContainer 
+            border="1px solid" 
+            borderColor="gray.300" 
+            borderRadius="md"
+            overflowX="auto"
+            bg="white"
+        >
+            <Table size="sm" variant="simple">
+                <Thead bg="gray.100">
+                    <Tr>
+                        <Th 
+                            border="1px solid" 
+                            borderColor="gray.300" 
+                            bg="blue.50" 
+                            color="blue.700"
+                            fontWeight="bold"
+                            textAlign="center"
+                            minW="200px"
+                        >
+                            Student Name
+                        </Th>
+                        {loadedData.dataTypes.map((dataType: string) => {
+                            const dataTypeInfo = DATA_TYPES.find(dt => dt.id === dataType);
+                            if (!dataTypeInfo) return null;
+
+                            // Check if we have split data (school/home columns)
+                            const hasSplitData = splitDataTypes.has(dataType);
+
+                            if (hasSplitData && dataType !== 'qadeem_stars') {
+                                // Show school and home columns
+                                return (
+                                    <React.Fragment key={dataType}>
+                                        <Th 
+                                            border="1px solid" 
+                                            borderColor="gray.300" 
+                                            bg="blue.50" 
+                                            color="blue.700"
+                                            fontWeight="bold"
+                                            textAlign="center"
+                                            minW="120px"
+                                        >
+                                            {dataTypeInfo.label} (School)
+                                        </Th>
+                                        <Th 
+                                            border="1px solid" 
+                                            borderColor="gray.300" 
+                                            bg="green.50" 
+                                            color="green.700"
+                                            fontWeight="bold"
+                                            textAlign="center"
+                                            minW="120px"
+                                        >
+                                            {dataTypeInfo.label} (Home)
+                                        </Th>
+                                    </React.Fragment>
+                                );
+                            } else {
+                                // Show single column
+                                return (
+                                    <Th 
+                                        key={dataType}
+                                        border="1px solid" 
+                                        borderColor="gray.300" 
+                                        bg="purple.50" 
+                                        color="purple.700"
+                                        fontWeight="bold"
+                                        textAlign="center"
+                                        minW="150px"
+                                    >
+                                        {dataTypeInfo.label}
+                                    </Th>
+                                );
+                            }
+                        })}
+                    </Tr>
+                </Thead>
+                <Tbody>
+                    {loadedData.students.map((student: any, index: number) => (
+                        <Tr key={student.id}>
+                            <Td 
+                                border="1px solid" 
+                                borderColor="gray.300" 
+                                bg={index % 2 === 0 ? "white" : "gray.50"}
+                                fontWeight="medium"
+                                textAlign="left"
+                            >
+                                {student.name}
+                            </Td>
+                            {loadedData.dataTypes.map((dataType: string) => {
+                                const dataTypeInfo = DATA_TYPES.find(dt => dt.id === dataType);
+                                if (!dataTypeInfo) return null;
+
+                                // Check if we have split data (school/home columns)
+                                const hasSplitData = splitDataTypes.has(dataType);
+
+                                if (hasSplitData && dataType !== 'qadeem_stars') {
+                                    // Show school and home cells
+                                    return (
+                                        <React.Fragment key={dataType}>
+                                            <Td 
+                                                border="1px solid" 
+                                                borderColor="gray.300" 
+                                                bg={index % 2 === 0 ? "white" : "gray.50"}
+                                                textAlign="center"
+                                                fontWeight="semibold"
+                                                color="blue.600"
+                                            >
+                                                {student[`${dataType}_school`] || 0}
+                                            </Td>
+                                            <Td 
+                                                border="1px solid" 
+                                                borderColor="gray.300" 
+                                                bg={index % 2 === 0 ? "white" : "gray.50"}
+                                                textAlign="center"
+                                                fontWeight="semibold"
+                                                color="green.600"
+                                            >
+                                                {student[`${dataType}_home`] || 0}
+                                            </Td>
+                                        </React.Fragment>
+                                    );
+                                } else {
+                                    // Show single cell
+                                    return (
+                                        <Td 
+                                            key={dataType}
+                                            border="1px solid" 
+                                            borderColor="gray.300" 
+                                            bg={index % 2 === 0 ? "white" : "gray.50"}
+                                            textAlign="center"
+                                            fontWeight="semibold"
+                                            color="blue.600"
+                                        >
+                                            {student[dataType] || 0}
+                                        </Td>
+                                    );
+                                }
+                            })}
+                        </Tr>
+                    ))}
+                </Tbody>
+            </Table>
+        </TableContainer>
+    );
+});
 
 function ExportDataContent() {
     const { user } = useContext(UserContext);
@@ -214,21 +376,35 @@ function ExportDataContent() {
         return filt;
     }, [orgUsers, search]);
 
-    // Flatten helpers
-    const flattenOrg = (org: string) =>
-        (orgUsers[org] || []).map((u) => idStr(u._id));
+    // Member ids per org and per org → group, built once per load instead of
+    // re-filtering every user for every checkbox on every render.
+    const memberIds = useMemo(() => {
+        const byOrg: Record<string, string[]> = {};
+        const byGroup: Record<string, Record<string, string[]>> = {};
+        Object.entries(orgUsers).forEach(([org, users]) => {
+            byOrg[org] = users.map((u) => idStr(u._id));
+            byGroup[org] = {};
+            users.forEach(u => {
+                const id = idStr(u._id);
+                const grpList = u.organizations?.[org]?.groups || [];
+                if (!grpList.length) {
+                    byGroup[org][NOT_ASSIGNED] = byGroup[org][NOT_ASSIGNED] || [];
+                    byGroup[org][NOT_ASSIGNED].push(id);
+                }
+                grpList.forEach(grp => {
+                    if (grp === NOT_ASSIGNED) return;
+                    byGroup[org][grp] = byGroup[org][grp] || [];
+                    byGroup[org][grp].push(id);
+                });
+            });
+        });
+        return { byOrg, byGroup };
+    }, [orgUsers]);
 
-    const flattenGroup = (org: string, grp: string) => {
-        const all = orgUsers[org] || [];
-        if (grp === NOT_ASSIGNED) {
-            return all
-                .filter(u => (u.organizations?.[org]?.groups || []).length === 0)
-                .map(u => idStr(u._id));
-        }
-        return all
-            .filter(u => (u.organizations?.[org]?.groups || []).includes(grp))
-            .map(u => idStr(u._id));
-    };
+    // Flatten helpers
+    const flattenOrg = (org: string) => memberIds.byOrg[org] || [];
+
+    const flattenGroup = (org: string, grp: string) => memberIds.byGroup[org]?.[grp] || [];
 
     // Toggle functions
     const toggleUser = (id: string) => {
@@ -359,6 +535,8 @@ function ExportDataContent() {
         }
 
         try {
+            const splitDataTypes = getSplitDataTypes(loadedData);
+
             // Prepare data for Excel
             const excelData = loadedData.students.map((student: any) => {
                 const row: any = {
@@ -370,9 +548,7 @@ function ExportDataContent() {
                     const label = DATA_TYPES.find(dt => dt.id === dataType)?.label || dataType;
                     
                     // Check if we have split data
-                    const hasSplitData = loadedData.students.some((s: any) => 
-                        s[`${dataType}_school`] !== undefined || s[`${dataType}_home`] !== undefined
-                    );
+                    const hasSplitData = splitDataTypes.has(dataType);
                     
                     if (hasSplitData && dataType !== 'qadeem_stars') {
                         // Add school and home columns
@@ -556,48 +732,52 @@ function ExportDataContent() {
                                                 </Box>
                                                 <AccordionIcon />
                                             </AccordionButton>
-                                            <AccordionPanel pb={4}>
-                                                <Accordion allowMultiple>
-                                                    {Object.entries(groups).sort(([a], [b]) => compareGroups(a, b)).map(([grp, users]) => (
-                                                        <AccordionItem key={grp} border="none">
-                                                            <AccordionButton 
-                                                                _hover={{ bg: "green.50" }}
-                                                                borderRadius="md"
-                                                                ml={4}
-                                                                mb={1}
-                                                            >
-                                                                <Checkbox
-                                                                    isChecked={flattenGroup(org, grp).every((i) => selectedIds.has(i))}
-                                                                    onChange={() => toggleGroup(org, grp)}
-                                                                    mr={3}
-                                                                    colorScheme="green"
-                                                                />
-                                                                <Box flex="1" textAlign="left">
-                                                                    {grp}
-                                                                </Box>
-                                                                <AccordionIcon />
-                                                            </AccordionButton>
-                                                            <AccordionPanel pb={2}>
-                                                                <VStack align="stretch" ml={8}>
-                                                                    {users.map((u) => {
-                                                                        const uid = u._id.$oid;
-                                                                        return (
-                                                                            <HStack key={uid} py={1}>
-                                                                                <Checkbox 
-                                                                                    isChecked={selectedIds.has(uid)} 
-                                                                                    onChange={() => toggleUser(uid)}
-                                                                                    colorScheme="green"
-                                                                                />
-                                                                                <Box>{u.full_name}</Box>
-                                                                            </HStack>
-                                                                        );
-                                                                    })}
-                                                                </VStack>
-                                                            </AccordionPanel>
-                                                        </AccordionItem>
-                                                    ))}
-                                                </Accordion>
-                                            </AccordionPanel>
+                                            <LazyAccordionPanel pb={4}>
+                                                {() => (
+                                                    <Accordion allowMultiple>
+                                                        {Object.entries(groups).sort(([a], [b]) => compareGroups(a, b)).map(([grp, users]) => (
+                                                            <AccordionItem key={grp} border="none">
+                                                                <AccordionButton 
+                                                                    _hover={{ bg: "green.50" }}
+                                                                    borderRadius="md"
+                                                                    ml={4}
+                                                                    mb={1}
+                                                                >
+                                                                    <Checkbox
+                                                                        isChecked={flattenGroup(org, grp).every((i) => selectedIds.has(i))}
+                                                                        onChange={() => toggleGroup(org, grp)}
+                                                                        mr={3}
+                                                                        colorScheme="green"
+                                                                    />
+                                                                    <Box flex="1" textAlign="left">
+                                                                        {grp}
+                                                                    </Box>
+                                                                    <AccordionIcon />
+                                                                </AccordionButton>
+                                                                <LazyAccordionPanel pb={2}>
+                                                                    {() => (
+                                                                        <VStack align="stretch" ml={8}>
+                                                                            {users.map((u) => {
+                                                                                const uid = u._id.$oid;
+                                                                                return (
+                                                                                    <HStack key={uid} py={1}>
+                                                                                        <Checkbox 
+                                                                                            isChecked={selectedIds.has(uid)} 
+                                                                                            onChange={() => toggleUser(uid)}
+                                                                                            colorScheme="green"
+                                                                                        />
+                                                                                        <Box>{u.full_name}</Box>
+                                                                                    </HStack>
+                                                                                );
+                                                                            })}
+                                                                        </VStack>
+                                                                    )}
+                                                                </LazyAccordionPanel>
+                                                            </AccordionItem>
+                                                        ))}
+                                                    </Accordion>
+                                                )}
+                                            </LazyAccordionPanel>
                                         </AccordionItem>
                                     ))}
                                 </Accordion>
@@ -858,153 +1038,7 @@ function ExportDataContent() {
                                     </Box>
                                     
                                     {/* Excel-like Table */}
-                                    <TableContainer 
-                                        border="1px solid" 
-                                        borderColor="gray.300" 
-                                        borderRadius="md"
-                                        overflowX="auto"
-                                        bg="white"
-                                    >
-                                        <Table size="sm" variant="simple">
-                                            <Thead bg="gray.100">
-                                                <Tr>
-                                                    <Th 
-                                                        border="1px solid" 
-                                                        borderColor="gray.300" 
-                                                        bg="blue.50" 
-                                                        color="blue.700"
-                                                        fontWeight="bold"
-                                                        textAlign="center"
-                                                        minW="200px"
-                                                    >
-                                                        Student Name
-                                                    </Th>
-                                                    {loadedData.dataTypes.map((dataType: string) => {
-                                                        const dataTypeInfo = DATA_TYPES.find(dt => dt.id === dataType);
-                                                        if (!dataTypeInfo) return null;
-                                                        
-                                                        // Check if we have split data (school/home columns)
-                                                        const hasSplitData = loadedData.students.some((student: any) => 
-                                                            student[`${dataType}_school`] !== undefined || student[`${dataType}_home`] !== undefined
-                                                        );
-                                                        
-                                                        if (hasSplitData && dataType !== 'qadeem_stars') {
-                                                            // Show school and home columns
-                                                            return (
-                                                                <React.Fragment key={dataType}>
-                                                                    <Th 
-                                                                        border="1px solid" 
-                                                                        borderColor="gray.300" 
-                                                                        bg="blue.50" 
-                                                                        color="blue.700"
-                                                                        fontWeight="bold"
-                                                                        textAlign="center"
-                                                                        minW="120px"
-                                                                    >
-                                                                        {dataTypeInfo.label} (School)
-                                                                    </Th>
-                                                                    <Th 
-                                                                        border="1px solid" 
-                                                                        borderColor="gray.300" 
-                                                                        bg="green.50" 
-                                                                        color="green.700"
-                                                                        fontWeight="bold"
-                                                                        textAlign="center"
-                                                                        minW="120px"
-                                                                    >
-                                                                        {dataTypeInfo.label} (Home)
-                                                                    </Th>
-                                                                </React.Fragment>
-                                                            );
-                                                        } else {
-                                                            // Show single column
-                                                            return (
-                                                                <Th 
-                                                                    key={dataType}
-                                                                    border="1px solid" 
-                                                                    borderColor="gray.300" 
-                                                                    bg="purple.50" 
-                                                                    color="purple.700"
-                                                                    fontWeight="bold"
-                                                                    textAlign="center"
-                                                                    minW="150px"
-                                                                >
-                                                                    {dataTypeInfo.label}
-                                                                </Th>
-                                                            );
-                                                        }
-                                                    })}
-                                                </Tr>
-                                            </Thead>
-                                            <Tbody>
-                                                {loadedData.students.map((student: any, index: number) => (
-                                                    <Tr key={student.id}>
-                                                        <Td 
-                                                            border="1px solid" 
-                                                            borderColor="gray.300" 
-                                                            bg={index % 2 === 0 ? "white" : "gray.50"}
-                                                            fontWeight="medium"
-                                                            textAlign="left"
-                                                        >
-                                                            {student.name}
-                                                        </Td>
-                                                        {loadedData.dataTypes.map((dataType: string) => {
-                                                            const dataTypeInfo = DATA_TYPES.find(dt => dt.id === dataType);
-                                                            if (!dataTypeInfo) return null;
-                                                            
-                                                            // Check if we have split data (school/home columns)
-                                                            const hasSplitData = loadedData.students.some((s: any) => 
-                                                                s[`${dataType}_school`] !== undefined || s[`${dataType}_home`] !== undefined
-                                                            );
-                                                            
-                                                            if (hasSplitData && dataType !== 'qadeem_stars') {
-                                                                // Show school and home cells
-                                                                return (
-                                                                    <React.Fragment key={dataType}>
-                                                                        <Td 
-                                                                            border="1px solid" 
-                                                                            borderColor="gray.300" 
-                                                                            bg={index % 2 === 0 ? "white" : "gray.50"}
-                                                                            textAlign="center"
-                                                                            fontWeight="semibold"
-                                                                            color="blue.600"
-                                                                        >
-                                                                            {student[`${dataType}_school`] || 0}
-                                                                        </Td>
-                                                                        <Td 
-                                                                            border="1px solid" 
-                                                                            borderColor="gray.300" 
-                                                                            bg={index % 2 === 0 ? "white" : "gray.50"}
-                                                                            textAlign="center"
-                                                                            fontWeight="semibold"
-                                                                            color="green.600"
-                                                                        >
-                                                                            {student[`${dataType}_home`] || 0}
-                                                                        </Td>
-                                                                    </React.Fragment>
-                                                                );
-                                                            } else {
-                                                                // Show single cell
-                                                                return (
-                                                                    <Td 
-                                                                        key={dataType}
-                                                                        border="1px solid" 
-                                                                        borderColor="gray.300" 
-                                                                        bg={index % 2 === 0 ? "white" : "gray.50"}
-                                                                        textAlign="center"
-                                                                        fontWeight="semibold"
-                                                                        color="blue.600"
-                                                                    >
-                                                                        {student[dataType] || 0}
-                                                                    </Td>
-                                                                );
-                                                            }
-                                                        })}
-                                                    </Tr>
-                                                ))}
-                                            </Tbody>
-                                        </Table>
-                                    </TableContainer>
+                                    <PreviewTable loadedData={loadedData} />
                                     
                                     {/* Summary */}
                                     <Box 

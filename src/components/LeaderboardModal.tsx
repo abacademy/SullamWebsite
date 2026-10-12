@@ -27,6 +27,7 @@ import {
 } from '@chakra-ui/react';
 import axios from 'axios';
 import { BASE_URL } from '../constants/ApiConfig';
+import LazyAccordionPanel from './LazyAccordionPanel';
 
 interface UserObj {
     _id: { $oid: string };
@@ -59,6 +60,14 @@ const idStr = (v: any): string => {
     if (typeof v === 'string') return v;
     if (typeof v === 'object' && '$oid' in v) return v.$oid;
     return String(v);
+};
+
+// sort group names (Grade 1 before Grade 2, fallback to alpha)
+const compareGroups = (a: string, b: string) => {
+    const numA = a.match(/\d+/);
+    const numB = b.match(/\d+/);
+    if (numA && numB && numA[0] !== numB[0]) return parseInt(numA[0], 10) - parseInt(numB[0], 10);
+    return a.localeCompare(b);
 };
 
 export default function LeaderboardModal({
@@ -222,23 +231,35 @@ export default function LeaderboardModal({
         return filt;
     }, [orgUsers, search]);
 
-    // flatten helpers
-    const flattenOrg = (org: string) =>
-        (orgUsers[org] || []).map((u) => idStr(u._id));
+    // Member ids per org and per org → group, built once per load instead of
+    // re-filtering every user for every checkbox on every render.
+    const memberIds = useMemo(() => {
+        const byOrg: Record<string, string[]> = {};
+        const byGroup: Record<string, Record<string, string[]>> = {};
+        Object.entries(orgUsers).forEach(([org, users]) => {
+            byOrg[org] = users.map((u) => idStr(u._id));
+            byGroup[org] = {};
+            users.forEach(u => {
+                const id = idStr(u._id);
+                const grpList = u.organizations?.[org]?.groups || [];
+                if (!grpList.length) {
+                    byGroup[org][NOT_ASSIGNED] = byGroup[org][NOT_ASSIGNED] || [];
+                    byGroup[org][NOT_ASSIGNED].push(id);
+                }
+                grpList.forEach(grp => {
+                    if (grp === NOT_ASSIGNED) return;
+                    byGroup[org][grp] = byGroup[org][grp] || [];
+                    byGroup[org][grp].push(id);
+                });
+            });
+        });
+        return { byOrg, byGroup };
+    }, [orgUsers]);
 
-    // replace your fullFlattenGroup helper with this:
-    const flattenGroup = (org: string, grp: string) => {
-        const all = orgUsers[org] || []
-        if (grp === NOT_ASSIGNED) {
-            // everyone who has no groups at all
-            return all
-                .filter(u => (u.organizations?.[org]?.groups || []).length === 0)
-                .map(u => idStr(u._id))
-        }
-        return all
-            .filter(u => (u.organizations?.[org]?.groups || []).includes(grp))
-            .map(u => idStr(u._id))
-    }
+    // flatten helpers
+    const flattenOrg = (org: string) => memberIds.byOrg[org] || [];
+
+    const flattenGroup = (org: string, grp: string) => memberIds.byGroup[org]?.[grp] || [];
 
     // ---------------------------------------------
     //  T O G G L E S
@@ -390,38 +411,42 @@ export default function LeaderboardModal({
                                         </Box>
                                         <AccordionIcon />
                                     </AccordionButton>
-                                    <AccordionPanel>
-                                        <Accordion allowMultiple>
-                                            {Object.entries(groups).map(([grp, users]) => (
-                                                <AccordionItem key={grp}>
-                                                    <AccordionButton>
-                                                        <Checkbox
-                                                            isChecked={flattenGroup(org, grp).every((i) => selectedIds.has(i))}
-                                                            onChange={() => toggleGroup(org, grp)}
-                                                            mr={2}
-                                                        />
-                                                        <Box flex="1" textAlign="left">
-                                                            {grp}
-                                                        </Box>
-                                                        <AccordionIcon />
-                                                    </AccordionButton>
-                                                    <AccordionPanel>
-                                                        <VStack align="stretch">
-                                                            {users.map((u) => {
-                                                                const uid = u._id.$oid;
-                                                                return (
-                                                                    <HStack key={uid}>
-                                                                        <Checkbox isChecked={selectedIds.has(uid)} onChange={() => toggleUser(uid)} />
-                                                                        <Box>{u.full_name}</Box>
-                                                                    </HStack>
-                                                                );
-                                                            })}
-                                                        </VStack>
-                                                    </AccordionPanel>
-                                                </AccordionItem>
-                                            ))}
-                                        </Accordion>
-                                    </AccordionPanel>
+                                    <LazyAccordionPanel>
+                                        {() => (
+                                            <Accordion allowMultiple>
+                                                {Object.entries(groups).sort(([a], [b]) => compareGroups(a, b)).map(([grp, users]) => (
+                                                    <AccordionItem key={grp}>
+                                                        <AccordionButton>
+                                                            <Checkbox
+                                                                isChecked={flattenGroup(org, grp).every((i) => selectedIds.has(i))}
+                                                                onChange={() => toggleGroup(org, grp)}
+                                                                mr={2}
+                                                            />
+                                                            <Box flex="1" textAlign="left">
+                                                                {grp}
+                                                            </Box>
+                                                            <AccordionIcon />
+                                                        </AccordionButton>
+                                                        <LazyAccordionPanel>
+                                                            {() => (
+                                                                <VStack align="stretch">
+                                                                    {users.map((u) => {
+                                                                        const uid = u._id.$oid;
+                                                                        return (
+                                                                            <HStack key={uid}>
+                                                                                <Checkbox isChecked={selectedIds.has(uid)} onChange={() => toggleUser(uid)} />
+                                                                                <Box>{u.full_name}</Box>
+                                                                            </HStack>
+                                                                        );
+                                                                    })}
+                                                                </VStack>
+                                                            )}
+                                                        </LazyAccordionPanel>
+                                                    </AccordionItem>
+                                                ))}
+                                            </Accordion>
+                                        )}
+                                    </LazyAccordionPanel>
                                 </AccordionItem>
                             ))}
                         </Accordion>
@@ -441,7 +466,9 @@ export default function LeaderboardModal({
                             </HStack>
                             <Accordion allowMultiple>
                                 {Object.entries(tree).map(([org, groups]) => {
-                                    const selGroups = Object.entries(groups).filter(([grp]) => flattenGroup(org, grp).some((i) => selectedIds.has(i)));
+                                    const selGroups = Object.entries(groups)
+                                        .sort(([a], [b]) => compareGroups(a, b))
+                                        .filter(([grp]) => flattenGroup(org, grp).some((i) => selectedIds.has(i)));
                                     if (!selGroups.length) return null;
                                     return (
                                         <AccordionItem key={org}>
@@ -451,35 +478,39 @@ export default function LeaderboardModal({
                                                 </Box>
                                                 <AccordionIcon />
                                             </AccordionButton>
-                                            <AccordionPanel>
-                                                <Accordion allowMultiple>
-                                                    {selGroups.map(([grp, users]) => (
-                                                        <AccordionItem key={grp}>
-                                                            <AccordionButton>
-                                                                <Box flex="1" textAlign="left">
-                                                                    {grp}
-                                                                </Box>
-                                                                <AccordionIcon />
-                                                            </AccordionButton>
-                                                            <AccordionPanel>
-                                                                <VStack align="stretch">
-                                                                    {users
-                                                                        .filter((u) => selectedIds.has(u._id.$oid))
-                                                                        .map((u) => (
-                                                                            <HStack key={u._id.$oid} justify="space-between">
-                                                                                <Box>{u.full_name}</Box>
-                                                                                <Switch
-                                                                                    isChecked={!!presence[u._id.$oid]}
-                                                                                    onChange={(e) => setPresence({ ...presence, [u._id.$oid]: e.target.checked })}
-                                                                                />
-                                                                            </HStack>
-                                                                        ))}
-                                                                </VStack>
-                                                            </AccordionPanel>
-                                                        </AccordionItem>
-                                                    ))}
-                                                </Accordion>
-                                            </AccordionPanel>
+                                            <LazyAccordionPanel>
+                                                {() => (
+                                                    <Accordion allowMultiple>
+                                                        {selGroups.map(([grp, users]) => (
+                                                            <AccordionItem key={grp}>
+                                                                <AccordionButton>
+                                                                    <Box flex="1" textAlign="left">
+                                                                        {grp}
+                                                                    </Box>
+                                                                    <AccordionIcon />
+                                                                </AccordionButton>
+                                                                <LazyAccordionPanel>
+                                                                    {() => (
+                                                                        <VStack align="stretch">
+                                                                            {users
+                                                                                .filter((u) => selectedIds.has(u._id.$oid))
+                                                                                .map((u) => (
+                                                                                    <HStack key={u._id.$oid} justify="space-between">
+                                                                                        <Box>{u.full_name}</Box>
+                                                                                        <Switch
+                                                                                            isChecked={!!presence[u._id.$oid]}
+                                                                                            onChange={(e) => setPresence({ ...presence, [u._id.$oid]: e.target.checked })}
+                                                                                        />
+                                                                                    </HStack>
+                                                                                ))}
+                                                                        </VStack>
+                                                                    )}
+                                                                </LazyAccordionPanel>
+                                                            </AccordionItem>
+                                                        ))}
+                                                    </Accordion>
+                                                )}
+                                            </LazyAccordionPanel>
                                         </AccordionItem>
                                     );
                                 })}
@@ -513,33 +544,37 @@ export default function LeaderboardModal({
                                                     </Box>
                                                     <AccordionIcon />
                                                 </AccordionButton>
-                                                <AccordionPanel>
-                                                    <Accordion allowMultiple>
-                                                        {Object.entries(groups).map(([grp, users]) => (
-                                                            <AccordionItem key={grp}>
-                                                                <AccordionButton>
-                                                                    <Box flex="1" textAlign="left">
-                                                                        {grp}
-                                                                    </Box>
-                                                                    <AccordionIcon />
-                                                                </AccordionButton>
-                                                                <AccordionPanel>
-                                                                    <VStack align="stretch">
-                                                                        {users.map((u) => {
-                                                                            const uid = u._id.$oid;
-                                                                            return (
-                                                                                <HStack key={uid}>
-                                                                                    <Checkbox isChecked={viewableIds.has(uid)} onChange={() => toggleViewable(uid)} />
-                                                                                    <Box>{u.full_name}</Box>
-                                                                                </HStack>
-                                                                            );
-                                                                        })}
-                                                                    </VStack>
-                                                                </AccordionPanel>
-                                                            </AccordionItem>
-                                                        ))}
-                                                    </Accordion>
-                                                </AccordionPanel>
+                                                <LazyAccordionPanel>
+                                                    {() => (
+                                                        <Accordion allowMultiple>
+                                                            {Object.entries(groups).sort(([a], [b]) => compareGroups(a, b)).map(([grp, users]) => (
+                                                                <AccordionItem key={grp}>
+                                                                    <AccordionButton>
+                                                                        <Box flex="1" textAlign="left">
+                                                                            {grp}
+                                                                        </Box>
+                                                                        <AccordionIcon />
+                                                                    </AccordionButton>
+                                                                    <LazyAccordionPanel>
+                                                                        {() => (
+                                                                            <VStack align="stretch">
+                                                                                {users.map((u) => {
+                                                                                    const uid = u._id.$oid;
+                                                                                    return (
+                                                                                        <HStack key={uid}>
+                                                                                            <Checkbox isChecked={viewableIds.has(uid)} onChange={() => toggleViewable(uid)} />
+                                                                                            <Box>{u.full_name}</Box>
+                                                                                        </HStack>
+                                                                                    );
+                                                                                })}
+                                                                            </VStack>
+                                                                        )}
+                                                                    </LazyAccordionPanel>
+                                                                </AccordionItem>
+                                                            ))}
+                                                        </Accordion>
+                                                    )}
+                                                </LazyAccordionPanel>
                                             </AccordionItem>
                                         ))}
                                     </Accordion>
