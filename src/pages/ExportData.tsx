@@ -32,6 +32,7 @@ import AuthGuard from '../components/AuthGuard';
 import LazyAccordionPanel from '../components/LazyAccordionPanel';
 import * as XLSX from 'xlsx';
 import { BASE_URL } from '../constants/ApiConfig';
+import { compareGroups } from '../utils/sortGroups';
 
 const NOT_ASSIGNED = 'Not Assigned';
 
@@ -331,14 +332,6 @@ function ExportDataContent() {
                 setLoading(false);
             });
     }, [token, toast]);
-
-    // Helper to sort group names (Grade 1 before Grade 2, fallback to alpha)
-    const compareGroups = (a: string, b: string) => {
-        const numA = a.match(/\d+/);
-        const numB = b.match(/\d+/);
-        if (numA && numB && numA[0] !== numB[0]) return parseInt(numA[0], 10) - parseInt(numB[0], 10);
-        return a.localeCompare(b);
-    };
 
     // Organize users into tree structure
     const tree = useMemo(() => {

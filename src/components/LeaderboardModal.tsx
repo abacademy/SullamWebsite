@@ -28,6 +28,7 @@ import {
 import axios from 'axios';
 import { BASE_URL } from '../constants/ApiConfig';
 import LazyAccordionPanel from './LazyAccordionPanel';
+import { compareGroups } from '../utils/sortGroups';
 
 interface UserObj {
     _id: { $oid: string };
@@ -60,14 +61,6 @@ const idStr = (v: any): string => {
     if (typeof v === 'string') return v;
     if (typeof v === 'object' && '$oid' in v) return v.$oid;
     return String(v);
-};
-
-// sort group names (Grade 1 before Grade 2, fallback to alpha)
-const compareGroups = (a: string, b: string) => {
-    const numA = a.match(/\d+/);
-    const numB = b.match(/\d+/);
-    if (numA && numB && numA[0] !== numB[0]) return parseInt(numA[0], 10) - parseInt(numB[0], 10);
-    return a.localeCompare(b);
 };
 
 export default function LeaderboardModal({
