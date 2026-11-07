@@ -33,11 +33,25 @@ import {
     VStack,
     useToast,
 } from '@chakra-ui/react';
+import { keyframes } from '@emotion/react';
 import { ArrowBackIcon, HamburgerIcon } from '@chakra-ui/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import AuthGuard from '../components/AuthGuard';
 import { UserContext } from '../utils/UserContext';
 import { MAX_STEP, POLL_MS, STEPS, ZikrDetail, applyTap, errorMessage, parseAmount, zikrApi } from '../utils/zikr';
+
+const pendingPulse = keyframes`
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.85; }
+`;
+
+const arriveFromCloud = keyframes`
+    0% { opacity: 0; transform: translateY(0.6rem) scale(0.8); }
+    18% { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(-2.25rem) scale(1); }
+`;
+
+type FloatTap = { id: number; amount: number; drift: number; phase: 'pending' | 'done' };
 
 export function ZikrSessionContent() {
     const { id = '' } = useParams();
@@ -49,22 +63,66 @@ export function ZikrSessionContent() {
     const [missing, setMissing] = useState(false);
     const [custom, setCustom] = useState('');
     const [confirmDelete, setConfirmDelete] = useState(false);
-    const [pending, setPending] = useState(0);
-    const [justSaved, setJustSaved] = useState(false);
+    const [floats, setFloats] = useState<FloatTap[]>([]);
     const cancelRef = useRef<HTMLButtonElement>(null);
-    const savedTimer = useRef<number | undefined>(undefined);
+    const floatSeq = useRef(0);
+    const floatTimers = useRef<number[]>([]);
 
     // Taps update the screen at once; server reads are only applied when no tap
     // is in flight and none happened since the read started.
     const current = useRef<ZikrDetail | null>(null);
+    const lastTotal = useRef<number | null>(null);
     const inFlight = useRef(0);
     const version = useRef(0);
 
-    useEffect(() => () => window.clearTimeout(savedTimer.current), []);
+    useEffect(
+        () => () => {
+            floatTimers.current.forEach((t) => window.clearTimeout(t));
+        },
+        []
+    );
 
-    const show = (s: ZikrDetail) => {
+    const removeFloat = (floatId: number) => {
+        setFloats((prev) => prev.filter((f) => f.id !== floatId));
+    };
+
+    const beginFloat = (amount: number) => {
+        const floatId = ++floatSeq.current;
+        const drift = ((floatId % 5) - 2) * 10;
+        setFloats((prev) => [...prev, { id: floatId, amount, drift, phase: 'pending' }]);
+        return floatId;
+    };
+
+    const scheduleFloatCleanup = (floatId: number, ms = 900) => {
+        const timer = window.setTimeout(() => {
+            removeFloat(floatId);
+            floatTimers.current = floatTimers.current.filter((t) => t !== timer);
+        }, ms);
+        floatTimers.current.push(timer);
+    };
+
+    const resolveFloat = (floatId: number) => {
+        setFloats((prev) => prev.map((f) => (f.id === floatId ? { ...f, phase: 'done' } : f)));
+        scheduleFloatCleanup(floatId);
+    };
+
+    /** Remote / poll updates skip the pending spinner and just float the delta. */
+    const spawnRemoteFloat = (amount: number) => {
+        if (amount === 0) return;
+        const floatId = ++floatSeq.current;
+        const drift = ((floatId % 5) - 2) * 10;
+        setFloats((prev) => [...prev, { id: floatId, amount, drift, phase: 'done' }]);
+        scheduleFloatCleanup(floatId);
+    };
+
+    const show = (s: ZikrDetail, opts?: { fromTap?: boolean }) => {
+        const prevTotal = lastTotal.current;
         current.current = s;
+        lastTotal.current = s.total;
         setSession(s);
+        if (!opts?.fromTap && prevTotal !== null && s.total !== prevTotal) {
+            spawnRemoteFloat(s.total - prevTotal);
+        }
     };
 
     const refresh = useCallback(async () => {
@@ -92,20 +150,17 @@ export function ZikrSessionContent() {
         if (applied === 0) return;
         version.current += 1;
         inFlight.current += 1;
-        setPending((n) => n + 1);
-        setJustSaved(false);
-        show(next);
+        show(next, { fromTap: true });
+        const floatId = beginFloat(applied);
         zikrApi
             .count(id, applied)
-            .then(() => {
-                setJustSaved(true);
-                window.clearTimeout(savedTimer.current);
-                savedTimer.current = window.setTimeout(() => setJustSaved(false), 900);
+            .then(() => resolveFloat(floatId))
+            .catch((e) => {
+                removeFloat(floatId);
+                toast({ status: 'error', title: errorMessage(e, 'That count did not save') });
             })
-            .catch((e) => toast({ status: 'error', title: errorMessage(e, 'That count did not save') }))
             .finally(() => {
                 inFlight.current -= 1;
-                setPending((n) => Math.max(0, n - 1));
                 if (inFlight.current === 0) refresh();
             });
     };
@@ -194,33 +249,55 @@ export function ZikrSessionContent() {
 
             <VStack spacing={1} mb={4}>
                 <Heading size="md">{session.name}</Heading>
-                <Text
-                    fontSize={['5xl', '6xl']}
-                    fontWeight="extrabold"
-                    lineHeight="1.1"
-                    data-testid="zikr-total"
-                    color={justSaved && pending === 0 ? 'green.500' : undefined}
-                    transition="color 0.2s ease"
-                >
-                    {total.toLocaleString()}
-                </Text>
-                <Flex align="center" justify="center" gap={2} minH="18px">
-                    <Text color="gray.500" fontSize="sm">
-                        {target ? `of ${target.toLocaleString()} target · ` : ''}you've added {session.myCount.toLocaleString()}
+                <Box position="relative" display="inline-block" overflow="visible">
+                    <Text fontSize={['5xl', '6xl']} fontWeight="extrabold" lineHeight="1.1" data-testid="zikr-total">
+                        {total.toLocaleString()}
                     </Text>
-                    {pending > 0 ? (
-                        <HStack spacing={1} data-testid="zikr-saving">
-                            <Spinner size="xs" thickness="2px" speed="0.7s" color="gray.400" />
-                            <Text fontSize="xs" color="gray.400">
-                                Saving
+                    {floats.map((f) => {
+                        const label = f.amount > 0 ? `+${f.amount.toLocaleString()}` : f.amount.toLocaleString();
+                        if (f.phase === 'pending') {
+                            return (
+                                <HStack
+                                    key={f.id}
+                                    position="absolute"
+                                    left={`calc(100% + ${8 + f.drift}px)`}
+                                    top="50%"
+                                    transform="translateY(-50%)"
+                                    spacing={2}
+                                    pointerEvents="none"
+                                    data-testid="zikr-float-pending"
+                                    sx={{ animation: `${pendingPulse} 1s ease-in-out infinite` }}
+                                >
+                                    <Spinner size="sm" thickness="2px" speed="0.65s" color="gray.400" />
+                                    <Text fontSize={['xl', '2xl']} fontWeight="extrabold" color="gray.400" whiteSpace="nowrap">
+                                        {label}
+                                    </Text>
+                                </HStack>
+                            );
+                        }
+                        return (
+                            <Text
+                                key={f.id}
+                                position="absolute"
+                                left={`calc(100% + ${8 + f.drift}px)`}
+                                top="50%"
+                                mt="-0.6em"
+                                pointerEvents="none"
+                                fontSize={['2xl', '3xl']}
+                                fontWeight="extrabold"
+                                color={f.amount > 0 ? 'green.500' : 'red.400'}
+                                whiteSpace="nowrap"
+                                data-testid="zikr-float"
+                                sx={{ animation: `${arriveFromCloud} 0.9s ease-out forwards` }}
+                            >
+                                {label}
                             </Text>
-                        </HStack>
-                    ) : justSaved ? (
-                        <Text fontSize="xs" color="green.500" fontWeight="medium" data-testid="zikr-saved">
-                            Saved
-                        </Text>
-                    ) : null}
-                </Flex>
+                        );
+                    })}
+                </Box>
+                <Text color="gray.500" fontSize="sm">
+                    {target ? `of ${target.toLocaleString()} target · ` : ''}you've added {session.myCount.toLocaleString()}
+                </Text>
                 {reached && <Badge colorScheme="green">Target reached</Badge>}
             </VStack>
             {target ? (
