@@ -187,6 +187,15 @@ function LeaderboardListPageContent() {
             <Stack direction="row" justify="space-between" align="center" mb={4}>
                 <Heading size="lg">Leaderboards</Heading>
                 <Stack direction="row" spacing={3}>
+                    {hasAnyTeacherRole() && (
+                        <Button
+                            colorScheme="teal"
+                            variant="outline"
+                            onClick={() => navigate('/zikr')}
+                        >
+                            Zikr Sessions
+                        </Button>
+                    )}
                     <Button
                         colorScheme="blue"
                         variant="outline"
