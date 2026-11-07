@@ -49,13 +49,18 @@ export function ZikrSessionContent() {
     const [missing, setMissing] = useState(false);
     const [custom, setCustom] = useState('');
     const [confirmDelete, setConfirmDelete] = useState(false);
+    const [pending, setPending] = useState(0);
+    const [justSaved, setJustSaved] = useState(false);
     const cancelRef = useRef<HTMLButtonElement>(null);
+    const savedTimer = useRef<number | undefined>(undefined);
 
     // Taps update the screen at once; server reads are only applied when no tap
     // is in flight and none happened since the read started.
     const current = useRef<ZikrDetail | null>(null);
     const inFlight = useRef(0);
     const version = useRef(0);
+
+    useEffect(() => () => window.clearTimeout(savedTimer.current), []);
 
     const show = (s: ZikrDetail) => {
         current.current = s;
@@ -84,18 +89,23 @@ export function ZikrSessionContent() {
         const s = current.current;
         if (!s || s.closed) return;
         const [next, applied] = applyTap(s, amount, user?.full_name || 'You');
-        if (applied === 0) {
-            toast({ status: 'info', title: 'Nothing left to subtract', duration: 1500 });
-            return;
-        }
+        if (applied === 0) return;
         version.current += 1;
         inFlight.current += 1;
+        setPending((n) => n + 1);
+        setJustSaved(false);
         show(next);
         zikrApi
             .count(id, applied)
+            .then(() => {
+                setJustSaved(true);
+                window.clearTimeout(savedTimer.current);
+                savedTimer.current = window.setTimeout(() => setJustSaved(false), 900);
+            })
             .catch((e) => toast({ status: 'error', title: errorMessage(e, 'That count did not save') }))
             .finally(() => {
                 inFlight.current -= 1;
+                setPending((n) => Math.max(0, n - 1));
                 if (inFlight.current === 0) refresh();
             });
     };
@@ -184,12 +194,33 @@ export function ZikrSessionContent() {
 
             <VStack spacing={1} mb={4}>
                 <Heading size="md">{session.name}</Heading>
-                <Text fontSize={['5xl', '6xl']} fontWeight="extrabold" lineHeight="1.1" data-testid="zikr-total">
+                <Text
+                    fontSize={['5xl', '6xl']}
+                    fontWeight="extrabold"
+                    lineHeight="1.1"
+                    data-testid="zikr-total"
+                    color={justSaved && pending === 0 ? 'green.500' : undefined}
+                    transition="color 0.2s ease"
+                >
                     {total.toLocaleString()}
                 </Text>
-                <Text color="gray.500" fontSize="sm">
-                    {target ? `of ${target.toLocaleString()} target · ` : ''}you've added {session.myCount.toLocaleString()}
-                </Text>
+                <Flex align="center" justify="center" gap={2} minH="18px">
+                    <Text color="gray.500" fontSize="sm">
+                        {target ? `of ${target.toLocaleString()} target · ` : ''}you've added {session.myCount.toLocaleString()}
+                    </Text>
+                    {pending > 0 ? (
+                        <HStack spacing={1} data-testid="zikr-saving">
+                            <Spinner size="xs" thickness="2px" speed="0.7s" color="gray.400" />
+                            <Text fontSize="xs" color="gray.400">
+                                Saving
+                            </Text>
+                        </HStack>
+                    ) : justSaved ? (
+                        <Text fontSize="xs" color="green.500" fontWeight="medium" data-testid="zikr-saved">
+                            Saved
+                        </Text>
+                    ) : null}
+                </Flex>
                 {reached && <Badge colorScheme="green">Target reached</Badge>}
             </VStack>
             {target ? (
@@ -212,7 +243,7 @@ export function ZikrSessionContent() {
                         size="lg"
                         px={0}
                         onClick={() => tap(-n)}
-                        isDisabled={session.closed || session.myCount === 0}
+                        isDisabled={session.closed}
                     >
                         −{n}
                     </Button>
@@ -231,7 +262,7 @@ export function ZikrSessionContent() {
                 <Button colorScheme="accent" onClick={() => tapCustom(1)} isDisabled={session.closed}>
                     Add
                 </Button>
-                <Button colorScheme="red" variant="outline" onClick={() => tapCustom(-1)} isDisabled={session.closed || session.myCount === 0}>
+                <Button colorScheme="red" variant="outline" onClick={() => tapCustom(-1)} isDisabled={session.closed}>
                     Subtract
                 </Button>
             </HStack>

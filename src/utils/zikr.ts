@@ -52,21 +52,21 @@ const byCount = (a: ZikrEntry, b: ZikrEntry) =>
     b.count - a.count || a.name.toLowerCase().localeCompare(b.name.toLowerCase());
 
 /**
- * Apply a tap locally before the server answers. Subtracting never takes the
- * user's own count below zero. Returns the new session and the amount actually
- * applied (0 means nothing to send).
+ * Apply a tap locally before the server answers. Subtracting can take your own
+ * count negative (others' entries stay as-is). Returns the new session and the
+ * amount applied (0 means nothing to send).
  */
 export function applyTap(s: ZikrDetail, amount: number, myName: string): [ZikrDetail, number] {
-    const applied = amount < 0 ? -Math.min(-amount, s.myCount) : amount;
-    if (applied === 0) return [s, 0];
-    const myCount = s.myCount + applied;
+    if (amount === 0) return [s, 0];
+    const myCount = s.myCount + amount;
     const others = s.entries.filter((e) => !e.isMe);
     const mine = s.entries.find((e) => e.isMe);
-    const entries = myCount > 0 ? [...others, { name: mine?.name || myName, count: myCount, isMe: true }] : others;
+    const entries =
+        myCount === 0 ? others : [...others, { name: mine?.name || myName, count: myCount, isMe: true }];
     entries.sort(byCount);
     return [
-        { ...s, myCount, total: s.total + applied, entries, contributors: entries.length },
-        applied,
+        { ...s, myCount, total: s.total + amount, entries, contributors: entries.length },
+        amount,
     ];
 }
 

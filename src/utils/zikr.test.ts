@@ -48,17 +48,30 @@ test('first tap adds me to the list', () => {
     expect(next.contributors).toBe(2);
 });
 
-test('subtracting stops at zero and drops me from the list', () => {
+test('subtracting can go negative and keeps me on the list', () => {
     const [next, applied] = applyTap(base, -1000, 'Me');
+    expect(applied).toBe(-1000);
+    expect(next.total).toBe(-600);
+    expect(next.myCount).toBe(-900);
+    expect(next.entries).toEqual([
+        { name: 'Other', count: 300, isMe: false },
+        { name: 'Me', count: -900, isMe: true },
+    ]);
+});
+
+test('subtracting exactly to zero drops me from the list', () => {
+    const [next, applied] = applyTap(base, -100, 'Me');
     expect(applied).toBe(-100);
-    expect(next.total).toBe(300);
     expect(next.myCount).toBe(0);
+    expect(next.total).toBe(300);
     expect(next.entries.map((e) => e.name)).toEqual(['Other']);
 });
 
-test('subtracting with nothing left is a no-op', () => {
-    const s = { ...base, myCount: 0 };
+test('subtracting with no prior count creates a negative entry', () => {
+    const s = { ...base, myCount: 0, total: 300, entries: [base.entries[0]] };
     const [next, applied] = applyTap(s, -50, 'Me');
-    expect(applied).toBe(0);
-    expect(next).toBe(s);
+    expect(applied).toBe(-50);
+    expect(next.myCount).toBe(-50);
+    expect(next.total).toBe(250);
+    expect(next.entries).toContainEqual({ name: 'Me', count: -50, isMe: true });
 });

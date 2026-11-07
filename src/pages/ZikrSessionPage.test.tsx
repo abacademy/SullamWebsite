@@ -88,19 +88,19 @@ test('+ buttons add to the total and send the amount', async () => {
     expect(await screen.findByText('Me (you)')).toBeInTheDocument();
 });
 
-test('minus buttons are disabled until you have added something', async () => {
+test('minus buttons stay enabled even with nothing of your own', async () => {
     renderPage();
     await screen.findByText('Friday Salawat');
-    expect(screen.getByRole('button', { name: '−50' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '−50' })).toBeEnabled();
 });
 
-test('subtract never takes you below zero', async () => {
+test('subtract can go negative against other people counts', async () => {
     server = detail({ total: 400, myCount: 100, entries: [{ name: 'Other', count: 300, isMe: false }, { name: 'Me', count: 100, isMe: true }] });
     renderPage();
     await screen.findByText('Friday Salawat');
     await userEvent.click(screen.getByRole('button', { name: '−1000' }));
-    expect(total()).toBe('300');
-    expect(mockedAxios.post).toHaveBeenCalledWith(expect.anything(), { amount: -100 }, expect.anything());
+    expect(total()).toBe('-600');
+    expect(mockedAxios.post).toHaveBeenCalledWith(expect.anything(), { amount: -1000 }, expect.anything());
 });
 
 test('custom amount adds the typed number', async () => {
