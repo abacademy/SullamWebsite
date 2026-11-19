@@ -186,7 +186,7 @@ export function ZikrSessionContent() {
     const remove = async () => {
         try {
             await zikrApi.remove(id);
-            navigate('/zikr');
+            navigate('/sessions');
         } catch (e) {
             toast({ status: 'error', title: errorMessage(e, 'Delete failed') });
             setConfirmDelete(false);
@@ -197,7 +197,7 @@ export function ZikrSessionContent() {
         return (
             <VStack p={10} spacing={4}>
                 <Text>This zikr session doesn't exist or isn't open to you.</Text>
-                <Button onClick={() => navigate('/zikr')}>Back to Zikr Sessions</Button>
+                <Button onClick={() => navigate('/sessions')}>Back to Sessions</Button>
             </VStack>
         );
     }
@@ -215,7 +215,7 @@ export function ZikrSessionContent() {
     return (
         <Box p={[4, 6]} maxW="760px" mx="auto">
             <Flex justify="space-between" align="center" mb={4} gap={2}>
-                <Button leftIcon={<ArrowBackIcon />} colorScheme="blue" variant="outline" onClick={() => navigate('/zikr')}>
+                <Button leftIcon={<ArrowBackIcon />} colorScheme="blue" variant="outline" onClick={() => navigate('/sessions')}>
                     Sessions
                 </Button>
                 <HStack spacing={1} flexWrap="wrap" justify="end">

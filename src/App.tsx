@@ -11,6 +11,7 @@ import PercentageLeaderboard from './pages/PercentageLeaderboard';
 import LeaderboardShufflePage from './pages/LeaderboardShufflePage';
 import ZikrSessionList from './pages/ZikrSessionList';
 import ZikrSessionPage from './pages/ZikrSessionPage';
+import TaqmSessionPage from './pages/TaqmSessionPage';
 import { UserProvider } from './utils/UserContext';
 
 const theme = extendTheme({
@@ -44,8 +45,10 @@ export default function App() {
                         <Route path="/export-data" element={<ExportData />} />
                         <Route path="/percentage-leaderboard" element={<PercentageLeaderboard />} />
                         <Route path="/leaderboardshuffle" element={<LeaderboardShufflePage />} />
-                        <Route path="/zikr" element={<ZikrSessionList />} />
+                        <Route path="/sessions" element={<ZikrSessionList />} />
+                        <Route path="/zikr" element={<Navigate to="/sessions" replace />} />
                         <Route path="/zikr/:id" element={<ZikrSessionPage />} />
+                        <Route path="/taqm/:id" element={<TaqmSessionPage />} />
                         <Route path="*" element={<Navigate to="/" />} />
                     </Routes>
                 </Router>
