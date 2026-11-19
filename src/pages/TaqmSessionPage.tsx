@@ -11,7 +11,6 @@ import {
     AlertIcon,
     Box,
     Button,
-    Collapse,
     Flex,
     FormControl,
     FormLabel,
@@ -423,8 +422,8 @@ export function TaqmSessionContent() {
                     {showTxns ? <ChevronDownIcon /> : <ChevronRightIcon />}
                     <Heading size="sm">Activity ({(session.transactions || []).length})</Heading>
                 </HStack>
-                <Collapse in={showTxns} animateOpacity>
-                    {(session.transactions || []).length === 0 ? (
+                {showTxns &&
+                    ((session.transactions || []).length === 0 ? (
                         <Text color="gray.500" fontSize="sm">
                             No changes yet.
                         </Text>
@@ -459,8 +458,7 @@ export function TaqmSessionContent() {
                                 </Box>
                             ))}
                         </VStack>
-                    )}
-                </Collapse>
+                    ))}
             </Box>
 
             <Modal
