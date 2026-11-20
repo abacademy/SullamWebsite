@@ -191,9 +191,9 @@ function LeaderboardListPageContent() {
                         <Button
                             colorScheme="teal"
                             variant="outline"
-                            onClick={() => navigate('/zikr')}
+                            onClick={() => navigate('/sessions')}
                         >
-                            Zikr Sessions
+                            Sessions
                         </Button>
                     )}
                     <Button
